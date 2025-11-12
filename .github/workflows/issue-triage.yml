@@ -29,10 +29,10 @@ jobs:
             
             const prompt = `You are a helpful code triage assistant. Analyze this GitHub issue and provide:
 
-1. A brief 1-2 sentence summary of the issue
-2. Suggested labels (bug, feature, documentation, question, etc.)
-3. Priority level (critical, high, medium, low)
-4. If it includes code, any initial observations about the code
+: # 1. A brief 1-2 sentence summary of the issue
+: # 2. Suggested labels (bug, feature, documentation, question, etc.)
+: # 3. Priority level (critical, high, medium, low)
+: # 4. If it includes code, any initial observations about the code
 
 Issue to analyze:
 ${issueContent}
