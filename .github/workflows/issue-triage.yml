@@ -23,25 +23,10 @@ jobs:
         with:
           script: |
             const https = require('https');
-            
             const issue = context.payload.issue;
-            const issueContent = `Title: ${issue.title}\n\nBody:\n${issue.body || '(no description)'}`;
+            const issueContent = 'Title: ' + issue.title + '\n\nBody:\n' + (issue.body || '(no description)');
             
-            const prompt = `You are a helpful code triage assistant. Analyze this GitHub issue and provide:
-
-1. A brief 1-2 sentence summary of the issue
-2. Suggested labels (bug, feature, documentation, question, etc.)
-3. Priority level (critical, high, medium, low)
-4. If it includes code, any initial observations about the code
-
-Issue to analyze:
-${issueContent}
-
-Format your response as:
-SUMMARY: [summary here]
-LABELS: [comma-separated labels]
-PRIORITY: [critical/high/medium/low]
-CODE_NOTES: [any code observations, or "N/A" if no code]`;
+            const promptText = 'You are a helpful code triage assistant. Analyze this GitHub issue and provide:\n1. A brief 1-2 sentence summary of the issue\n2. Suggested labels (bug, feature, documentation, question, etc.)\n3. Priority level (critical, high, medium, low)\n4. If it includes code, any initial observations about the code\n\nIssue to analyze:\n' + issueContent + '\n\nFormat your response as:\nSUMMARY: [summary here]\nLABELS: [comma-separated labels]\nPRIORITY: [critical/high/medium/low]\nCODE_NOTES: [any code observations, or N/A if no code]';
 
             const requestBody = JSON.stringify({
               model: "claude-sonnet-4-5-20250929",
@@ -49,7 +34,7 @@ CODE_NOTES: [any code observations, or "N/A" if no code]`;
               messages: [
                 {
                   role: "user",
-                  content: prompt
+                  content: promptText
                 }
               ]
             });
@@ -68,7 +53,7 @@ CODE_NOTES: [any code observations, or "N/A" if no code]`;
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
                   if (res.statusCode !== 200) {
-                    reject(new Error(`API error: ${res.statusCode} - ${data}`));
+                    reject(new Error('API error: ' + res.statusCode + ' - ' + data));
                     return;
                   }
                   const response = JSON.parse(data);
@@ -95,12 +80,7 @@ CODE_NOTES: [any code observations, or "N/A" if no code]`;
             const fs = require('fs');
             const triageResult = fs.readFileSync('triage_result.txt', 'utf8');
             
-            const comment = `## 🤖 Automated Issue Triage
-
-${triageResult}
-
----
-*This analysis was performed automatically by Claude. Please review and adjust as needed.*`;
+            const comment = '## 🤖 Automated Issue Triage\n\n' + triageResult + '\n\n---\n*This analysis was performed automatically by Claude. Please review and adjust as needed.*';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -116,7 +96,6 @@ ${triageResult}
             const fs = require('fs');
             const triageResult = fs.readFileSync('triage_result.txt', 'utf8');
             
-            // Extract labels from the triage result
             const labelsMatch = triageResult.match(/LABELS:\s*(.+?)(?:\n|$)/);
             if (!labelsMatch) return;
             
