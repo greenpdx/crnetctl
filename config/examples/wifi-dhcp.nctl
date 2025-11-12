@@ -1,0 +1,20 @@
+[connection]
+name = "WiFi DHCP"
+uuid = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+type = "wifi"
+autoconnect = true
+interface-name = "wlan0"
+
+[wifi]
+ssid = "MyHomeNetwork"
+mode = "infrastructure"
+
+[wifi-security]
+key-mgmt = "wpa-psk"
+psk = "mypassword123"
+
+[ipv4]
+method = "auto"
+
+[ipv6]
+method = "auto"

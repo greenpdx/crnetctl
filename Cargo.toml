@@ -1,0 +1,99 @@
+[package]
+name = "netctl"
+version = "0.1.0"
+edition = "2021"
+authors = ["CRRouter Team"]
+description = "Network control tool with NetworkManager D-Bus compatibility"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-org/netctl"
+readme = "README.md"
+keywords = ["network", "wifi", "networkmanager", "dbus"]
+categories = ["command-line-utilities", "network-programming"]
+
+[lib]
+name = "netctl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "netctl"
+path = "src/bin/netctl.rs"
+
+[[bin]]
+name = "nm-converter"
+path = "src/bin/nm-converter.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# D-Bus for NetworkManager compatibility
+zbus = "4"
+zvariant = "4"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Dynamic plugin loading
+libloading = "0.8"
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+mockall = "0.12"
+tempfile = "3"
+serial_test = "3"
+
+# Integration test helpers
+assert_cmd = "2"
+predicates = "3"
+
+[features]
+default = ["dbus-nm"]
+dbus-nm = []  # NetworkManager D-Bus compatibility
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[package.metadata.deb]
+maintainer = "CRRouter Team <team@crrouter.example>"
+copyright = "2025, CRRouter Team"
+license-file = ["LICENSE-MIT", "0"]
+extended-description = """
+Network control tool providing command-line interface for managing
+network interfaces, WiFi, Access Points, DHCP, and DNS. Includes
+NetworkManager D-Bus compatibility layer for drop-in replacement.
+"""
+depends = "$auto, iproute2, iw"
+section = "net"
+priority = "optional"
+assets = [
+    ["target/release/netctl", "usr/bin/", "755"],
+    ["target/release/nm-converter", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/netctl/", "644"],
+    ["systemd/netctl.service", "lib/systemd/system/", "644"],
+    ["systemd/netctl@.service", "lib/systemd/system/", "644"],
+    ["systemd/netctl-auto@.service", "lib/systemd/system/", "644"],
+    ["systemd/README.md", "usr/share/doc/netctl/systemd/", "644"],
+    ["config/examples/wifi-wpa.nctl", "usr/share/doc/netctl/examples/", "644"],
+    ["config/examples/wifi-dhcp.nctl", "usr/share/doc/netctl/examples/", "644"],
+    ["config/examples/ethernet-dhcp.nctl", "usr/share/doc/netctl/examples/", "644"],
+    ["config/examples/ethernet-static.nctl", "usr/share/doc/netctl/examples/", "644"],
+    ["config/examples/vpn-openvpn.nctl", "usr/share/doc/netctl/examples/", "644"],
+]

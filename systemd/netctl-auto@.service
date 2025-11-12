@@ -1,0 +1,28 @@
+[Unit]
+Description=Netctl Automatic Connection Management for %i
+Documentation=https://github.com/your-org/netctl
+After=network-pre.target netctl.service
+Wants=network.target
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+Before=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/netctl auto-connect %i
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Hardening options
+NoNewPrivileges=false
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/netctl /run/netctl /var/lib/netctl
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

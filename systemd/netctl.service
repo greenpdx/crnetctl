@@ -1,0 +1,28 @@
+[Unit]
+Description=Netctl Network Manager
+Documentation=https://github.com/your-org/netctl
+After=network-pre.target
+Before=network.target
+Wants=network.target
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.NetworkManager
+ExecStart=/usr/bin/netctl daemon
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Hardening options
+NoNewPrivileges=false
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/netctl /run/netctl /var/lib/netctl
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_SYS_MODULE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+Alias=NetworkManager.service

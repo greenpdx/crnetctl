@@ -1,0 +1,135 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Triage issue with Claude
+        id: triage
+        uses: actions/github-script@v7
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          script: |
+            const https = require('https');
+            
+            const issue = context.payload.issue;
+            const issueContent = `Title: ${issue.title}\n\nBody:\n${issue.body || '(no description)'}`;
+            
+            const prompt = `You are a helpful code triage assistant. Analyze this GitHub issue and provide:
+            
+1. A brief 1-2 sentence summary of the issue
+2. Suggested labels (bug, feature, documentation, question, etc.)
+3. Priority level (critical, high, medium, low)
+4. If it includes code, any initial observations about the code
+
+Issue to analyze:
+${issueContent}
+
+Format your response as:
+SUMMARY: [summary here]
+LABELS: [comma-separated labels]
+PRIORITY: [critical/high/medium/low]
+CODE_NOTES: [any code observations, or "N/A" if no code]`;
+
+            const requestBody = JSON.stringify({
+              model: "claude-sonnet-4-5-20250929",
+              max_tokens: 1024,
+              messages: [
+                {
+                  role: "user",
+                  content: prompt
+                }
+              ]
+            });
+
+            return new Promise((resolve, reject) => {
+              const req = https.request('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'anthropic-version': '2023-06-01',
+                  'x-api-key': process.env.ANTHROPIC_API_KEY,
+                  'Content-Length': Buffer.byteLength(requestBody)
+                }
+              }, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                  if (res.statusCode !== 200) {
+                    reject(new Error(`API error: ${res.statusCode} - ${data}`));
+                    return;
+                  }
+                  const response = JSON.parse(data);
+                  resolve(response.content[0].text);
+                });
+              });
+
+              req.on('error', reject);
+              req.write(requestBody);
+              req.end();
+            });
+
+      - name: Parse triage results
+        id: parse
+        run: |
+          result="${{ steps.triage.outputs.result }}"
+          echo "$result" > triage_result.txt
+          cat triage_result.txt
+
+      - name: Comment on issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const triageResult = fs.readFileSync('triage_result.txt', 'utf8');
+            
+            const comment = `## 🤖 Automated Issue Triage
+
+${triageResult}
+
+---
+*This analysis was performed automatically by Claude. Please review and adjust as needed.*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Apply labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const triageResult = fs.readFileSync('triage_result.txt', 'utf8');
+            
+            // Extract labels from the triage result
+            const labelsMatch = triageResult.match(/LABELS:\s*(.+?)(?:\n|$)/);
+            if (!labelsMatch) return;
+            
+            const labels = labelsMatch[1]
+              .split(',')
+              .map(l => l.trim())
+              .filter(l => l && l !== 'N/A');
+            
+            if (labels.length > 0) {
+              github.rest.issues.addLabels({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: labels
+              });
+            }

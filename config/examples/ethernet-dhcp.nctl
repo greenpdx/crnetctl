@@ -1,0 +1,16 @@
+[connection]
+name = "Ethernet DHCP"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+type = "ethernet"
+autoconnect = true
+interface-name = "eth0"
+
+[ethernet]
+# Optional: specify MAC address to bind to specific hardware
+# mac-address = "00:11:22:33:44:55"
+
+[ipv4]
+method = "auto"
+
+[ipv6]
+method = "auto"

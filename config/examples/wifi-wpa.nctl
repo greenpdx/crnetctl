@@ -1,0 +1,21 @@
+# Netctl WiFi Configuration Example
+
+[connection]
+name = "MyWiFi"
+uuid = "12345678-1234-1234-1234-123456789abc"
+type = "wifi"
+autoconnect = true
+
+[wifi]
+ssid = "MyHomeNetwork"
+mode = "infrastructure"
+
+[wifi-security]
+key-mgmt = "wpa-psk"
+psk = "mypassword123"
+
+[ipv4]
+method = "auto"  # auto (DHCP) or manual (static)
+
+[ipv6]
+method = "auto"

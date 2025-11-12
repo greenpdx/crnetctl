@@ -1,0 +1,23 @@
+# Netctl OpenVPN Configuration Example
+
+[connection]
+name = "MyVPN"
+uuid = "87654321-4321-4321-4321-cba987654321"
+type = "vpn"
+plugin = "openvpn"
+autoconnect = false
+
+[vpn]
+remote = "vpn.example.com"
+port = 1194
+proto = "udp"
+connection-type = "tun"
+ca = "/etc/openvpn/ca.crt"
+cert = "/etc/openvpn/client.crt"
+key = "/etc/openvpn/client.key"
+
+[ipv4]
+method = "auto"
+
+[ipv6]
+method = "auto"
