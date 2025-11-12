@@ -27,12 +27,7 @@ jobs:
             const issue = context.payload.issue;
             const issueContent = `Title: ${issue.title}\n\nBody:\n${issue.body || '(no description)'}`;
             
-            const prompt = `You are a helpful code triage assistant. Analyze this GitHub issue and provide:
-
-: # 1. A brief 1-2 sentence summary of the issue
-: # 2. Suggested labels (bug, feature, documentation, question, etc.)
-: # 3. Priority level (critical, high, medium, low)
-: # 4. If it includes code, any initial observations about the code
+            const prompt = `You are a helpful code triage assistant. Analyze this GitHub issue and provide:\n\n1. A brief 1-2 sentence summary of the issue\n2. Suggested labels (bug, feature, documentation, question, etc.)\n3. Priority level (critical, high, medium, low)\n4. If it includes code, any initial observations about the code
 
 Issue to analyze:
 ${issueContent}
