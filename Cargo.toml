@@ -26,6 +26,10 @@ path = "src/bin/nm-converter.rs"
 name = "crrouter-web"
 path = "src/bin/crrouter-web.rs"
 
+[[bin]]
+name = "nccli"
+path = "src/bin/nccli.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -33,6 +37,7 @@ async-trait = "0.1"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
+colored = "2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -97,6 +102,7 @@ section = "net"
 priority = "optional"
 assets = [
     ["target/release/netctl", "usr/bin/", "755"],
+    ["target/release/nccli", "usr/bin/", "755"],
     ["target/release/nm-converter", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/netctl/", "644"],
     ["systemd/netctl.service", "lib/systemd/system/", "644"],
