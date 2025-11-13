@@ -1,10 +1,9 @@
-# nccli - NetworkManager-compatible CLI
+# nccli - Network Control CLI
 
-`nccli` is a comprehensive command-line interface for network management, designed to be compatible with NetworkManager's `nmcli` tool. It provides full network device and connection management using the netctl backend.
+`nccli` is a comprehensive command-line interface for network management. It provides complete network device and connection management using the netctl backend.
 
 ## Features
 
-- **Full nmcli compatibility**: Commands and syntax match NetworkManager's nmcli
 - **Connection management**: Create, modify, activate, and delete network connections
 - **Device management**: Control network interfaces, WiFi devices, and more
 - **WiFi support**: Scan, connect, and create hotspots
@@ -20,9 +19,9 @@ nccli [OPTIONS] <COMMAND>
 ### Available Commands
 
 - **general** - Show overall status and system information
-  - `status` - Show NetworkManager status
+  - `status` - Show network system status
   - `hostname` - Get or set system hostname
-  - `permissions` - Show permissions
+  - `permissions` - Show current user capabilities
   - `logging` - Get or set logging level and domains
 
 - **networking** - Overall networking control
@@ -61,7 +60,7 @@ nccli [OPTIONS] <COMMAND>
   - `wifi` - Manage WiFi devices
   - `lldp` - Show LLDP neighbors
 
-- **monitor** - Monitor NetworkManager activity
+- **monitor** - Monitor network activity
 
 ## WiFi Device Commands
 
@@ -181,10 +180,6 @@ psk = "MyPassword"
 method = "auto"
 ```
 
-## Compatibility
-
-`nccli` aims for full compatibility with `nmcli` commands and options, making it a drop-in replacement for most common network management tasks. All operations use the battle-tested netctl backend, ensuring reliability and security.
-
 ## Security
 
 - All input is validated to prevent command injection
@@ -195,5 +190,4 @@ method = "auto"
 ## See Also
 
 - `netctl` - The underlying network control tool
-- `nmcli(1)` - NetworkManager's CLI (for comparison)
 - Connection configuration examples in `/usr/share/doc/netctl/examples/`

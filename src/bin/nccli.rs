@@ -1,7 +1,7 @@
-//! nccli - NetworkManager-compatible CLI Tool
+//! nccli - Network Control CLI Tool
 //!
-//! A comprehensive network management CLI similar to nmcli,
-//! providing full NetworkManager compatibility using the netctl backend
+//! A comprehensive network management command-line interface
+//! providing complete network control using the netctl backend
 
 use clap::{Parser, Subcommand, ValueEnum};
 use netctl::*;
@@ -12,7 +12,7 @@ use std::process;
 
 #[derive(Parser)]
 #[command(name = "nccli")]
-#[command(about = "NetworkManager-compatible CLI - manage network connections and devices", long_about = None)]
+#[command(about = "Network Control CLI - manage network connections and devices", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -82,7 +82,7 @@ enum Commands {
     #[command(subcommand)]
     Device(DeviceCommands),
 
-    /// Monitor NetworkManager activity
+    /// Monitor network activity
     Monitor,
 }
 
@@ -91,7 +91,7 @@ enum Commands {
 // ============================================================================
 #[derive(Subcommand)]
 enum GeneralCommands {
-    /// Show NetworkManager status
+    /// Show network system status
     Status,
 
     /// Get or set system hostname
@@ -100,7 +100,7 @@ enum GeneralCommands {
         hostname: Option<String>,
     },
 
-    /// Show the permissions
+    /// Show current user capabilities
     Permissions,
 
     /// Get or set logging level and domains
@@ -555,16 +555,16 @@ async fn handle_general(cmd: &GeneralCommands, cli: &Cli) -> NetctlResult<()> {
         }
         GeneralCommands::Permissions => {
             if cli.terse {
-                println!("org.freedesktop.NetworkManager.enable-disable-network:yes");
-                println!("org.freedesktop.NetworkManager.enable-disable-wifi:yes");
-                println!("org.freedesktop.NetworkManager.settings.modify.own:yes");
-                println!("org.freedesktop.NetworkManager.settings.modify.system:yes");
+                println!("network.control:yes");
+                println!("network.wifi:yes");
+                println!("network.settings.modify:yes");
+                println!("network.settings.system:yes");
             } else {
                 println!("{:50} {}", "PERMISSION", "VALUE");
-                println!("{:50} {}", "org.freedesktop.NetworkManager.enable-disable-network", "yes");
-                println!("{:50} {}", "org.freedesktop.NetworkManager.enable-disable-wifi", "yes");
-                println!("{:50} {}", "org.freedesktop.NetworkManager.settings.modify.own", "yes");
-                println!("{:50} {}", "org.freedesktop.NetworkManager.settings.modify.system", "yes");
+                println!("{:50} {}", "network.control", "yes");
+                println!("{:50} {}", "network.wifi", "yes");
+                println!("{:50} {}", "network.settings.modify", "yes");
+                println!("{:50} {}", "network.settings.system", "yes");
             }
         }
         GeneralCommands::Logging { level, domains } => {
@@ -763,14 +763,12 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
             iface_ctrl.up(interface).await?;
 
             if !cli.terse {
-                println!("Connection '{}' successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/1)",
-                        id);
+                println!("Connection '{}' successfully activated", id);
             }
         }
         ConnectionCommands::Down { id } => {
             if !cli.terse {
-                println!("Connection '{}' successfully deactivated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/1)",
-                        id);
+                println!("Connection '{}' successfully deactivated", id);
             }
         }
         ConnectionCommands::Add { r#type, con_name, ifname, autoconnect, ssid, password, ip4, gw4, ip6: _, gw6: _ } => {
@@ -1291,7 +1289,7 @@ async fn handle_device_wifi(cmd: &WifiDeviceCommands, cli: &Cli) -> NetctlResult
 // MONITOR COMMAND HANDLER
 // ============================================================================
 async fn handle_monitor(cli: &Cli) -> NetctlResult<()> {
-    println!("Monitoring NetworkManager state...");
+    println!("Monitoring network state...");
     println!("Press Ctrl+C to stop");
 
     let iface_ctrl = interface::InterfaceController::new();
