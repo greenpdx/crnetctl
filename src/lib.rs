@@ -11,6 +11,7 @@
 //! Includes NetworkManager D-Bus compatibility layer.
 
 pub mod error;
+pub mod validation;
 pub mod interface;
 pub mod wifi;
 pub mod hostapd;
