@@ -5,6 +5,7 @@
 //! - WiFi management
 //! - Access Point (hostapd)
 //! - DHCP server (dora)
+//! - DHCP testing and diagnostics (dhcpm)
 //! - DNS configuration
 //! - Routing
 //!
@@ -16,6 +17,7 @@ pub mod interface;
 pub mod wifi;
 pub mod hostapd;
 pub mod dhcp;
+pub mod dhcpm;
 pub mod routing;
 pub mod plugin;
 pub mod connection_config;
@@ -29,6 +31,10 @@ pub use interface::{InterfaceController, InterfaceInfo, IpAddress, InterfaceStat
 pub use wifi::{WifiController, WifiDeviceInfo, RegDomain, ScanResult};
 pub use hostapd::{HostapdController, AccessPointConfig};
 pub use dhcp::{DhcpController, DhcpConfig};
+pub use dhcpm::{
+    DhcpmController, DhcpTestConfig, DhcpTestResult, DhcpResponse,
+    DhcpMessageType, DhcpOption,
+};
 pub use routing::RoutingController;
 pub use plugin::{
     NetworkPlugin, PluginCapability, PluginMetadata, PluginState,

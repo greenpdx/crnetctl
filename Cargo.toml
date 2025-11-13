@@ -22,6 +22,10 @@ path = "src/bin/netctl.rs"
 name = "nm-converter"
 path = "src/bin/nm-converter.rs"
 
+[[bin]]
+name = "crrouter-web"
+path = "src/bin/crrouter-web.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -49,6 +53,14 @@ anyhow = "1.0"
 
 # Dynamic plugin loading
 libloading = "0.8"
+
+# DHCP testing
+dhcpm = { git = "https://github.com/leshow/dhcpm", default-features = false }
+
+# Web interface
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 [dev-dependencies]
 # Testing
