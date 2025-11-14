@@ -18,6 +18,9 @@ pub struct PluginManager {
     /// D-Bus connection (when feature enabled)
     #[cfg(feature = "dbus-nm")]
     dbus_conn: Option<Arc<zbus::Connection>>,
+    /// NetworkManager D-Bus interface (when feature enabled)
+    #[cfg(feature = "dbus-nm")]
+    nm_dbus: Option<Arc<crate::dbus::NetworkManagerDBus>>,
 }
 
 impl PluginManager {
@@ -29,7 +32,15 @@ impl PluginManager {
             config_dir,
             #[cfg(feature = "dbus-nm")]
             dbus_conn: None,
+            #[cfg(feature = "dbus-nm")]
+            nm_dbus: None,
         }
+    }
+
+    /// Set the NetworkManager D-Bus interface
+    #[cfg(feature = "dbus-nm")]
+    pub fn set_dbus_interface(&mut self, nm_dbus: Arc<crate::dbus::NetworkManagerDBus>) {
+        self.nm_dbus = Some(nm_dbus);
     }
 
     /// Initialize the plugin manager
@@ -152,6 +163,26 @@ impl PluginManager {
 
         plugin.activate(uuid).await?;
         info!("Activated connection {} via plugin {}", uuid, plugin_id);
+
+        // Emit D-Bus state changed signal
+        #[cfg(feature = "dbus-nm")]
+        if let Some(ref nm_dbus) = self.nm_dbus {
+            let state: crate::dbus::DeviceState = plugin.state().into();
+            let device_path = format!("/org/freedesktop/NetworkManager/Devices/{}", plugin_id);
+
+            // Update device state
+            if let Err(e) = nm_dbus.update_device_state(&device_path, state).await {
+                warn!("Failed to update D-Bus device state: {}", e);
+            }
+
+            // Emit StateChanged signal
+            if let Some(ref conn) = self.dbus_conn {
+                if let Err(e) = crate::dbus::signals::emit_state_changed(conn, 70).await {
+                    warn!("Failed to emit StateChanged signal: {}", e);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -163,6 +194,26 @@ impl PluginManager {
 
         plugin.deactivate(uuid).await?;
         info!("Deactivated connection {} via plugin {}", uuid, plugin_id);
+
+        // Emit D-Bus state changed signal
+        #[cfg(feature = "dbus-nm")]
+        if let Some(ref nm_dbus) = self.nm_dbus {
+            let state: crate::dbus::DeviceState = plugin.state().into();
+            let device_path = format!("/org/freedesktop/NetworkManager/Devices/{}", plugin_id);
+
+            // Update device state
+            if let Err(e) = nm_dbus.update_device_state(&device_path, state).await {
+                warn!("Failed to update D-Bus device state: {}", e);
+            }
+
+            // Emit StateChanged signal
+            if let Some(ref conn) = self.dbus_conn {
+                if let Err(e) = crate::dbus::signals::emit_state_changed(conn, 30).await {
+                    warn!("Failed to emit StateChanged signal: {}", e);
+                }
+            }
+        }
+
         Ok(())
     }
 

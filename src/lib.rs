@@ -23,9 +23,13 @@ pub mod routing;
 pub mod plugin;
 pub mod connection_config;
 pub mod vpn;
+pub mod network_monitor;
 
 #[cfg(feature = "dbus-nm")]
 pub mod dbus;
+
+#[cfg(feature = "dbus-nm")]
+pub mod dbus_integration;
 
 // Re-export commonly used types
 pub use error::{NetctlError, NetctlResult};
@@ -46,3 +50,4 @@ pub use plugin::{
 pub use vpn::{
     VpnBackend, VpnBackendFactory, VpnManager, VpnState, VpnStats,
 };
+pub use network_monitor::{NetworkMonitor, NetworkEvent};

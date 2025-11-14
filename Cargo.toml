@@ -34,6 +34,7 @@ path = "src/bin/nccli.rs"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
+futures = "0.3"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
@@ -48,6 +49,10 @@ uuid = { version = "1.0", features = ["v4"] }
 # D-Bus for NetworkManager compatibility
 zbus = "4"
 zvariant = "4"
+
+# Network monitoring
+rtnetlink = "0.14"
+netlink-packet-route = "0.19"
 
 # Logging
 tracing = "0.1"
