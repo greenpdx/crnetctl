@@ -68,6 +68,10 @@ axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
+# Tor via Arti
+arti-client = "0.23"
+tor-rtcompat = "0.23"
+
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"
@@ -115,4 +119,5 @@ assets = [
     ["config/examples/ethernet-dhcp.nctl", "usr/share/doc/netctl/examples/", "644"],
     ["config/examples/ethernet-static.nctl", "usr/share/doc/netctl/examples/", "644"],
     ["config/examples/vpn-openvpn.nctl", "usr/share/doc/netctl/examples/", "644"],
+    ["config/examples/vpn-arti.nctl", "usr/share/doc/netctl/examples/", "644"],
 ]

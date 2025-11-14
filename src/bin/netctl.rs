@@ -721,8 +721,7 @@ async fn handle_debug(cmd: &DebugCommands, _cli: &Cli) -> NetctlResult<()> {
 }
 
 async fn handle_vpn(cmd: &VpnCommands, cli: &Cli) -> NetctlResult<()> {
-    use netctl::vpn::{VpnManager, wireguard, openvpn, ipsec};
-    use std::collections::HashMap;
+    use netctl::vpn::{VpnManager, wireguard, openvpn, ipsec, arti};
 
     // Initialize VPN manager with backends
     let config_dir = std::env::var("NETCTL_CONFIG_DIR")
@@ -733,6 +732,7 @@ async fn handle_vpn(cmd: &VpnCommands, cli: &Cli) -> NetctlResult<()> {
     manager.register_backend("wireguard", wireguard::create_backend);
     manager.register_backend("openvpn", openvpn::create_backend);
     manager.register_backend("ipsec", ipsec::create_backend);
+    manager.register_backend("arti", arti::create_backend);
 
     match cmd {
         VpnCommands::List => {

@@ -1,0 +1,31 @@
+# Netctl Arti (Tor) Configuration Example
+#
+# This configuration sets up a Tor connection using the Arti client library.
+# Unlike traditional VPNs, Tor provides privacy-focused anonymity through onion routing.
+# Applications can connect through the SOCKS5 proxy to route traffic via Tor.
+
+[connection]
+name = "Tor via Arti"
+uuid = "arti0001-0000-0000-0000-000000000001"
+type = "vpn"
+plugin = "arti"
+autoconnect = false
+
+[vpn]
+# SOCKS5 proxy address (default: 127.0.0.1:9050)
+# Applications should be configured to use this SOCKS5 proxy
+socks_addr = "127.0.0.1:9050"
+
+# Optional: Custom state directory for Tor state data
+# If not specified, uses system default
+# state_dir = "/var/lib/tor/arti"
+
+# Optional: Custom cache directory for Tor consensus data
+# If not specified, uses system default
+# cache_dir = "/var/cache/tor/arti"
+
+[ipv4]
+method = "auto"
+
+[ipv6]
+method = "auto"
