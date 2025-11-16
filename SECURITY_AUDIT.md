@@ -1,13 +1,13 @@
-# Security Audit Report for nccli
+# Security Audit Report for libnccli
 
 **Date:** 2025-11-13
 **Auditor:** Claude Code
-**Component:** nccli - Network Control CLI Tool
+**Component:** libnccli - Network Control CLI Tool
 **Version:** 1.0.0
 
 ## Executive Summary
 
-This security audit examined the nccli command-line tool for potential security vulnerabilities. The audit focused on OWASP Top 10 web application security risks adapted for CLI applications, CWE Top 25, and general security best practices for system administration tools.
+This security audit examined the libnccli command-line tool for potential security vulnerabilities. The audit focused on OWASP Top 10 web application security risks adapted for CLI applications, CWE Top 25, and general security best practices for system administration tools.
 
 **Overall Risk Level:** MEDIUM
 
@@ -31,7 +31,7 @@ The audit included:
 
 **CWE-22: Improper Limitation of a Pathname to a Restricted Directory**
 
-**Location:** `src/bin/nccli.rs` lines 713, 749, 779, 842, 855, 868, 900, 913, 918
+**Location:** `src/bin/libnccli.rs` lines 713, 749, 779, 842, 855, 868, 900, 913, 918
 
 **Description:**
 Connection names provided by users are directly used to construct file paths without validation. An attacker could use path traversal sequences like `../../../tmp/evil` to write or read files outside the intended configuration directory.
@@ -43,7 +43,7 @@ let config_path = config_dir.join(format!("{}.nctl", id));
 
 **Attack Scenario:**
 ```bash
-nccli connection add --type ethernet --con-name "../../../tmp/malicious" --ip4 auto
+libnccli connection add --type ethernet --con-name "../../../tmp/malicious" --ip4 auto
 # This would create /tmp/malicious.nctl instead of /etc/crrouter/netctl/../../../tmp/malicious.nctl
 ```
 
@@ -79,7 +79,7 @@ fn validate_connection_name(name: &str) -> Result<(), NetctlError> {
 
 **CWE-20: Improper Input Validation**
 
-**Location:** `src/bin/nccli.rs` lines 804-806, 1229-1231
+**Location:** `src/bin/libnccli.rs` lines 804-806, 1229-1231
 
 **Description:**
 WiFi SSID values are not validated for length or content. According to IEEE 802.11 standards, SSIDs must be 0-32 bytes. Accepting invalid SSIDs could cause buffer overflows in hostapd or other WiFi management tools.
@@ -116,7 +116,7 @@ fn validate_ssid(ssid: &str) -> Result<(), NetctlError> {
 
 **CWE-521: Weak Password Requirements**
 
-**Location:** `src/bin/nccli.rs` lines 809-813, 1238-1239
+**Location:** `src/bin/libnccli.rs` lines 809-813, 1238-1239
 
 **Description:**
 WPA-PSK passwords are not validated for minimum/maximum length. WPA-PSK requires passwords to be 8-63 ASCII characters. Accepting invalid passwords will cause connection failures and poor user experience.
@@ -158,7 +158,7 @@ fn validate_wifi_password(password: &str) -> Result<(), NetctlError> {
 
 **CWE-732: Incorrect Permission Assignment for Critical Resource**
 
-**Location:** `src/bin/nccli.rs` lines 832, 920
+**Location:** `src/bin/libnccli.rs` lines 832, 920
 
 **Description:**
 Configuration files are created with default permissions (typically 644), making them world-readable. Since these files contain WiFi passwords and network credentials, they should be readable only by root.
@@ -199,7 +199,7 @@ file.write_all(config.as_bytes())
 
 **CWE-522: Insufficiently Protected Credentials**
 
-**Location:** `src/bin/nccli.rs` lines 809-813
+**Location:** `src/bin/libnccli.rs` lines 809-813
 
 **Description:**
 WiFi passwords are stored in plain text in configuration files. While this is inherent to the NCTL format and most network configuration systems, it should be documented as a limitation.
@@ -280,7 +280,7 @@ WiFi passwords are stored in plain text in configuration files. While this is in
 
 ## Conclusion
 
-The nccli tool has a solid foundation with good use of Rust's safety features. However, the identified vulnerabilities, particularly the path traversal issue, must be addressed before production use. The recommendations in this audit will significantly improve the security posture of the application.
+The libnccli tool has a solid foundation with good use of Rust's safety features. However, the identified vulnerabilities, particularly the path traversal issue, must be addressed before production use. The recommendations in this audit will significantly improve the security posture of the application.
 
 ## References
 

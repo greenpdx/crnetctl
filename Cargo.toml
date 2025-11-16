@@ -23,8 +23,8 @@ name = "nm-converter"
 path = "src/bin/nm-converter.rs"
 
 [[bin]]
-name = "nccli"
-path = "src/bin/nccli.rs"
+name = "libnccli"
+path = "src/bin/libnccli.rs"
 
 [[bin]]
 name = "crrouter-web"
@@ -112,7 +112,7 @@ section = "net"
 priority = "optional"
 assets = [
     ["target/release/netctl", "usr/bin/", "755"],
-    ["target/release/nccli", "usr/bin/", "755"],
+    ["target/release/libnccli", "usr/bin/", "755"],
     ["target/release/nm-converter", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/netctl/", "644"],
     ["systemd/netctl.service", "lib/systemd/system/", "644"],

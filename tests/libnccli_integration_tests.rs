@@ -1,4 +1,4 @@
-//! Integration tests for nccli
+//! Integration tests for libnccli
 //!
 //! These tests verify the CLI commands work correctly
 
@@ -8,14 +8,14 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Helper to create a test nccli command
-fn nccli() -> Command {
-    Command::cargo_bin("nccli").unwrap()
+/// Helper to create a test libnccli command
+fn liblibnccli() -> Command {
+    Command::cargo_bin("libnccli").unwrap()
 }
 
 #[test]
 fn test_help_command() {
-    nccli()
+    libnccli()
         .arg("--help")
         .assert()
         .success()
@@ -25,7 +25,7 @@ fn test_help_command() {
 #[test]
 fn test_general_status() {
     // This test may require network access or system capabilities
-    let output = nccli()
+    let output = libnccli()
         .arg("general")
         .arg("status")
         .output()
@@ -50,7 +50,7 @@ fn test_general_status() {
 #[test]
 fn test_general_status_terse() {
     // This test may require network access
-    let result = nccli()
+    let result = libnccli()
         .arg("-t")
         .arg("general")
         .arg("status")
@@ -74,7 +74,7 @@ fn test_general_status_terse() {
 
 #[test]
 fn test_general_permissions() {
-    nccli()
+    libnccli()
         .arg("general")
         .arg("permissions")
         .assert()
@@ -84,7 +84,7 @@ fn test_general_permissions() {
 
 #[test]
 fn test_general_permissions_terse() {
-    nccli()
+    libnccli()
         .arg("-t")
         .arg("general")
         .arg("permissions")
@@ -95,7 +95,7 @@ fn test_general_permissions_terse() {
 
 #[test]
 fn test_general_logging() {
-    nccli()
+    libnccli()
         .arg("general")
         .arg("logging")
         .assert()
@@ -105,7 +105,7 @@ fn test_general_logging() {
 
 #[test]
 fn test_radio_all() {
-    nccli()
+    libnccli()
         .arg("radio")
         .arg("all")
         .assert()
@@ -115,7 +115,7 @@ fn test_radio_all() {
 
 #[test]
 fn test_radio_all_terse() {
-    nccli()
+    libnccli()
         .arg("-t")
         .arg("radio")
         .arg("all")
@@ -126,7 +126,7 @@ fn test_radio_all_terse() {
 
 #[test]
 fn test_connection_show_no_connections() {
-    nccli()
+    libnccli()
         .arg("connection")
         .arg("show")
         .assert()
@@ -135,7 +135,7 @@ fn test_connection_show_no_connections() {
 
 #[test]
 fn test_connection_show_terse() {
-    nccli()
+    libnccli()
         .arg("-t")
         .arg("connection")
         .arg("show")
@@ -145,7 +145,7 @@ fn test_connection_show_terse() {
 
 #[test]
 fn test_connection_show_nonexistent() {
-    nccli()
+    libnccli()
         .arg("connection")
         .arg("show")
         .arg("nonexistent-connection")
@@ -157,7 +157,7 @@ fn test_connection_show_nonexistent() {
 #[test]
 fn test_device_status() {
     // Device status may require network access
-    let output = nccli()
+    let output = libnccli()
         .arg("device")
         .arg("status")
         .output()
@@ -181,7 +181,7 @@ fn test_device_status() {
 #[test]
 fn test_device_status_terse() {
     // Device status may require network access
-    let output = nccli()
+    let output = libnccli()
         .arg("-t")
         .arg("device")
         .arg("status")
@@ -203,7 +203,7 @@ fn test_device_status_terse() {
 
 #[test]
 fn test_invalid_command() {
-    nccli()
+    libnccli()
         .arg("invalid-command")
         .assert()
         .failure();
@@ -211,7 +211,7 @@ fn test_invalid_command() {
 
 #[test]
 fn test_connection_up_nonexistent() {
-    nccli()
+    libnccli()
         .arg("connection")
         .arg("up")
         .arg("nonexistent")
@@ -222,7 +222,7 @@ fn test_connection_up_nonexistent() {
 
 #[test]
 fn test_connection_down_nonexistent() {
-    nccli()
+    libnccli()
         .arg("connection")
         .arg("down")
         .arg("nonexistent")
@@ -233,7 +233,7 @@ fn test_connection_down_nonexistent() {
 #[test]
 fn test_device_show_loopback() {
     // Loopback should be available on all systems
-    let output = nccli()
+    let output = libnccli()
         .arg("device")
         .arg("show")
         .arg("lo")
@@ -266,7 +266,7 @@ fn test_device_show_loopback() {
 
 #[test]
 fn test_networking_connectivity() {
-    nccli()
+    libnccli()
         .arg("networking")
         .arg("connectivity")
         .assert()
@@ -277,7 +277,7 @@ fn test_networking_connectivity() {
 #[test]
 fn test_default_command_is_status() {
     // Running nccli with no args should show status
-    let output = nccli()
+    let output = libnccli()
         .output()
         .expect("Failed to execute command");
 
@@ -297,7 +297,7 @@ fn test_default_command_is_status() {
 
 #[test]
 fn test_version_from_help() {
-    nccli()
+    libnccli()
         .arg("--help")
         .assert()
         .success()
@@ -314,7 +314,7 @@ fn test_connection_add_ethernet() {
     // Note: This test would need proper environment setup or mocking
     // to actually create connections in the test config directory
     // For now, we just verify the command structure
-    nccli()
+    libnccli()
         .arg("connection")
         .arg("add")
         .arg("--type")
@@ -331,7 +331,7 @@ fn test_connection_add_ethernet() {
 
 #[test]
 fn test_connection_add_missing_name() {
-    nccli()
+    libnccli()
         .arg("connection")
         .arg("add")
         .arg("--type")
@@ -345,7 +345,7 @@ fn test_connection_add_missing_name() {
 
 #[test]
 fn test_output_mode_tabular() {
-    let output = nccli()
+    let output = libnccli()
         .arg("-m")
         .arg("tabular")
         .arg("device")
@@ -367,7 +367,7 @@ fn test_output_mode_tabular() {
 
 #[test]
 fn test_output_mode_terse() {
-    let output = nccli()
+    let output = libnccli()
         .arg("-m")
         .arg("terse")
         .arg("-t")
@@ -390,7 +390,7 @@ fn test_output_mode_terse() {
 
 #[test]
 fn test_wifi_commands_help() {
-    nccli()
+    libnccli()
         .arg("device")
         .arg("wifi")
         .arg("--help")
@@ -401,7 +401,7 @@ fn test_wifi_commands_help() {
 
 #[test]
 fn test_connection_commands_help() {
-    nccli()
+    libnccli()
         .arg("connection")
         .arg("--help")
         .assert()
@@ -414,7 +414,7 @@ fn test_connection_commands_help() {
 
 #[test]
 fn test_general_commands_help() {
-    nccli()
+    libnccli()
         .arg("general")
         .arg("--help")
         .assert()
@@ -426,7 +426,7 @@ fn test_general_commands_help() {
 
 #[test]
 fn test_device_commands_help() {
-    nccli()
+    libnccli()
         .arg("device")
         .arg("--help")
         .assert()
