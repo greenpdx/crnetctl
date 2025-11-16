@@ -67,6 +67,17 @@ enum Commands {
     /// Debug and diagnostics
     #[command(subcommand)]
     Debug(DebugCommands),
+
+    /// Run as a daemon with D-Bus services
+    Daemon {
+        /// Enable NetworkManager compatibility D-Bus interface
+        #[arg(long, default_value = "true")]
+        nm_compat: bool,
+
+        /// Enable CR D-Bus interface
+        #[arg(long, default_value = "true")]
+        cr_dbus: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -300,6 +311,7 @@ async fn main() {
         Commands::Vpn(ref cmd) => handle_vpn(cmd, &cli).await,
         Commands::Monitor(ref cmd) => handle_monitor(cmd, &cli).await,
         Commands::Debug(ref cmd) => handle_debug(cmd, &cli).await,
+        Commands::Daemon { nm_compat, cr_dbus } => handle_daemon(nm_compat, cr_dbus).await,
     };
 
     if let Err(e) = result {
@@ -998,5 +1010,151 @@ async fn handle_vpn(cmd: &VpnCommands, cli: &Cli) -> NetctlResult<()> {
         }
     }
 
+    Ok(())
+}
+
+async fn handle_daemon(nm_compat: bool, cr_dbus: bool) -> NetctlResult<()> {
+    use netctl::cr_dbus::CRDbusService;
+    use netctl::network_monitor::NetworkMonitor;
+    use std::sync::Arc;
+    use tokio::signal::unix::{signal, SignalKind};
+    use tracing::{info, error};
+
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_level(true)
+        .init();
+
+    info!("Starting netctl daemon");
+    info!("CR D-Bus: {}, NetworkManager compatibility: {}", cr_dbus, nm_compat);
+
+    // Variables to hold service references
+    let cr_service: Option<Arc<CRDbusService>>;
+    let nm_service: Option<(Arc<netctl::dbus::NetworkManagerDBus>, Arc<zbus::Connection>)>;
+
+    // Start CR D-Bus service if enabled
+    if cr_dbus {
+        info!("Starting CR D-Bus service");
+        match CRDbusService::start().await {
+            Ok(service) => {
+                info!("CR D-Bus service started successfully");
+
+                // Discover and register devices
+                if let Err(e) = service.discover_devices().await {
+                    error!("Failed to discover devices for CR D-Bus: {}", e);
+                } else {
+                    info!("Devices discovered and registered with CR D-Bus");
+                }
+
+                cr_service = Some(service);
+            }
+            Err(e) => {
+                error!("Failed to start CR D-Bus service: {}", e);
+                cr_service = None;
+            }
+        }
+    } else {
+        info!("CR D-Bus service disabled");
+        cr_service = None;
+    }
+
+    // Start NetworkManager compatibility service if enabled
+    #[cfg(feature = "dbus-nm")]
+    if nm_compat {
+        info!("Starting NetworkManager D-Bus compatibility service");
+        match netctl::dbus::start_dbus_service().await {
+            Ok((nm_dbus, conn)) => {
+                info!("NetworkManager D-Bus compatibility service started successfully");
+
+                // Discover and register devices for NetworkManager compatibility
+                let iface_ctrl = netctl::interface::InterfaceController::new();
+                if let Ok(interfaces) = iface_ctrl.list().await {
+                    for (index, iface) in interfaces.iter().enumerate() {
+                        let device_path = format!("/org/freedesktop/NetworkManager/Devices/{}", index);
+                        let device = netctl::dbus::DeviceInfo {
+                            path: device_path.clone(),
+                            interface: iface.clone(),
+                            device_type: 1, // TYPE_ETHERNET
+                            state: netctl::dbus::DeviceState::Disconnected,
+                            ip4_address: None,
+                            ip6_address: None,
+                        };
+                        nm_dbus.add_device(device).await;
+                    }
+                    info!("Devices registered with NetworkManager D-Bus");
+                }
+
+                nm_service = Some((nm_dbus, conn));
+            }
+            Err(e) => {
+                error!("Failed to start NetworkManager D-Bus service: {}", e);
+                nm_service = None;
+            }
+        }
+    } else {
+        info!("NetworkManager D-Bus compatibility service disabled");
+        nm_service = None;
+    }
+
+    #[cfg(not(feature = "dbus-nm"))]
+    let nm_service: Option<()> = None;
+
+    // Start network monitoring
+    info!("Starting network event monitor");
+    let monitor = Arc::new(NetworkMonitor::new());
+    if let Err(e) = monitor.start().await {
+        error!("Failed to start network monitor: {}", e);
+    } else {
+        info!("Network monitor started");
+    }
+
+    // Integrate network monitor with D-Bus services
+    #[cfg(feature = "dbus-nm")]
+    if let Some((ref nm_dbus, ref nm_conn)) = nm_service {
+        info!("Integrating network monitor with NetworkManager D-Bus");
+        if let Err(e) = netctl::dbus_integration::integrate_network_monitor_with_dbus(
+            monitor.clone(),
+            nm_dbus.clone(),
+            nm_conn.clone(),
+        ).await {
+            error!("Failed to integrate network monitor with NetworkManager D-Bus: {}", e);
+        } else {
+            info!("Network monitor integrated with NetworkManager D-Bus");
+        }
+    }
+
+    // Setup signal handlers for graceful shutdown
+    let mut sigterm = signal(SignalKind::terminate())
+        .map_err(|e| NetctlError::ServiceError(format!("Failed to setup SIGTERM handler: {}", e)))?;
+    let mut sigint = signal(SignalKind::interrupt())
+        .map_err(|e| NetctlError::ServiceError(format!("Failed to setup SIGINT handler: {}", e)))?;
+
+    info!("Netctl daemon is running. Press Ctrl+C to stop.");
+
+    // Main daemon loop - wait for shutdown signal
+    tokio::select! {
+        _ = sigterm.recv() => {
+            info!("Received SIGTERM, shutting down gracefully");
+        }
+        _ = sigint.recv() => {
+            info!("Received SIGINT, shutting down gracefully");
+        }
+    }
+
+    // Shutdown sequence
+    info!("Stopping network monitor");
+    if let Err(e) = monitor.stop().await {
+        error!("Error stopping network monitor: {}", e);
+    }
+
+    if let Some(service) = cr_service {
+        info!("Stopping CR D-Bus service");
+        if let Err(e) = service.stop().await {
+            error!("Error stopping CR D-Bus service: {}", e);
+        }
+    }
+
+    info!("Netctl daemon stopped");
     Ok(())
 }

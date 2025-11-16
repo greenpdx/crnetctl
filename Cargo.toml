@@ -28,7 +28,7 @@ path = "src/bin/libnccli.rs"
 
 [dependencies]
 # Async runtime - optimized features only
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "fs", "time", "sync", "io-util", "net"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "fs", "time", "sync", "io-util", "net", "signal"] }
 async-trait = "0.1"
 futures = "0.3"  # Required for TryStreamExt used by rtnetlink
 
