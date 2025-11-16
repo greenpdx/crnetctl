@@ -26,6 +26,10 @@ path = "src/bin/nm-converter.rs"
 name = "libnccli"
 path = "src/bin/libnccli.rs"
 
+[[example]]
+name = "dbus_test"
+path = "examples/dbus_test.rs"
+
 [dependencies]
 # Async runtime - optimized features only
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "fs", "time", "sync", "io-util", "net", "signal"] }

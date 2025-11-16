@@ -168,6 +168,8 @@ Edit `branding.toml` to customize:
 
 ## Testing
 
+### Unit and Integration Tests
+
 ```bash
 # Run unit tests
 cargo test --lib
@@ -178,6 +180,32 @@ cargo test --test '*'
 # Run all tests
 cargo test
 ```
+
+### D-Bus Interface Testing
+
+A comprehensive standalone D-Bus test program is available to exercise the CR D-Bus interface in both mock and real modes:
+
+```bash
+# Run in mock mode (simulated D-Bus service with test data)
+cargo run --example dbus_test -- --mode mock
+
+# Run in real mode (connect to actual netctl daemon)
+cargo run --example dbus_test -- --mode real
+
+# Test specific interfaces
+cargo run --example dbus_test -- --mode mock --test network-control
+cargo run --example dbus_test -- --mode mock --test wifi
+cargo run --example dbus_test -- --mode mock --test vpn
+cargo run --example dbus_test -- --mode mock --test signals
+```
+
+The test program provides:
+- **Mock Mode**: Runs a simulated D-Bus service with pre-populated test data (no root required)
+- **Real Mode**: Connects to an actual netctl daemon for integration testing
+- **Comprehensive Coverage**: Tests all D-Bus methods and signals across NetworkControl, WiFi, and VPN interfaces
+- **Detailed Output**: Shows all method calls, return values, and signal emissions
+
+See [docs/DBUS_TEST_GUIDE.md](docs/DBUS_TEST_GUIDE.md) for complete documentation.
 
 ## NetworkManager Compatibility
 
