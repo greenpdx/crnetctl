@@ -23,10 +23,6 @@ name = "nm-converter"
 path = "src/bin/nm-converter.rs"
 
 [[bin]]
-name = "crrouter-web"
-path = "src/bin/crrouter-web.rs"
-
-[[bin]]
 name = "nccli"
 path = "src/bin/nccli.rs"
 
