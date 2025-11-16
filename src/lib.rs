@@ -28,7 +28,7 @@ pub mod plugin;
 pub mod connection_config;
 pub mod vpn;
 pub mod network_monitor;
-pub mod libnm_compat;
+pub mod libcr_compat;
 pub mod cr_dbus;
 
 #[cfg(feature = "dbus-nm")]
@@ -69,7 +69,7 @@ pub use vpn::{
 pub use network_monitor::{NetworkMonitor, NetworkEvent};
 
 // libnm-compatible API (CR prefix)
-pub use libnm_compat::{
+pub use libcr_compat::{
     CRClient, CRDevice, CRDeviceType, CRDeviceState, CRDeviceCapabilities,
     CRConnection, CRRemoteConnection, CRActiveConnection, CRAccessPoint,
     CRIPConfig, CRIPAddress, CRIPRoute,

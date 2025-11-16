@@ -223,7 +223,7 @@ for route in ip_config.get_routes() {
 
 ## Example Usage
 
-See `examples/libnm_compat_example.rs` for a comprehensive example demonstrating:
+See `examples/libcr_compat_example.rs` for a comprehensive example demonstrating:
 
 - Creating a CRClient
 - Enumerating devices
@@ -235,7 +235,7 @@ See `examples/libnm_compat_example.rs` for a comprehensive example demonstrating
 ## Running the Example
 
 ```bash
-cargo run --example libnm_compat_example
+cargo run --example libcr_compat_example
 ```
 
 ## Implementation Notes
