@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::info;
 
 /// OpenVPN plugin
 pub struct OpenVpnPlugin {
@@ -16,11 +16,13 @@ pub struct OpenVpnPlugin {
     state: PluginState,
     enabled: bool,
     connections: RwLock<HashMap<String, OpenVpnConnection>>,
+    #[allow(dead_code)]
     config_dir: PathBuf,
 }
 
 /// OpenVPN connection instance
 struct OpenVpnConnection {
+    #[allow(dead_code)]
     uuid: String,
     config: ConnectionConfig,
     state: PluginState,

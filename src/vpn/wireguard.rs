@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::SystemTime;
 use tokio::process::Command;
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 use crate::plugin::ConnectionConfig;
 use crate::error::{NetctlError, NetctlResult};

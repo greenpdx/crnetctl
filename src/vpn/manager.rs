@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -12,6 +11,7 @@ use super::backend::{VpnBackend, VpnBackendFactory, VpnState, VpnStats};
 
 /// Represents an active VPN connection
 struct VpnConnection {
+    #[allow(dead_code)]
     uuid: String,
     config: ConnectionConfig,
     backend: Box<dyn VpnBackend>,
@@ -26,6 +26,7 @@ pub struct VpnManager {
     /// Registered backend factories
     backends: HashMap<String, VpnBackendFactory>,
     /// Configuration directory
+    #[allow(dead_code)]
     config_dir: PathBuf,
 }
 

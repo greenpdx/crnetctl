@@ -1,6 +1,6 @@
 //! Dynamic plugin loader - loads plugins from shared libraries (.so files)
 
-use super::traits::{NetworkPlugin, PluginFactory};
+use super::traits::NetworkPlugin;
 use crate::error::{NetctlError, NetctlResult};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn, error};

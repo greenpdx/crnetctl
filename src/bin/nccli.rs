@@ -772,7 +772,7 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
     let config_dir = PathBuf::from("/etc/crrouter/netctl");
 
     match cmd {
-        ConnectionCommands::Show { id, active } => {
+        ConnectionCommands::Show { id, active: _ } => {
             // List connection files
             let mut connections = Vec::new();
 
@@ -948,7 +948,7 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
                         config_path.display());
             }
         }
-        ConnectionCommands::Edit { id, r#type } => {
+        ConnectionCommands::Edit { id, r#type: _ } => {
             if let Some(conn_id) = id {
                 // Validate connection name to prevent path traversal
                 validate_connection_name(conn_id)?;
@@ -997,7 +997,7 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
                 println!("Connection '{}' loaded", filename);
             }
         }
-        ConnectionCommands::Import { r#type, file } => {
+        ConnectionCommands::Import { r#type, file: _ } => {
             println!("Import not yet implemented for type: {}", r#type);
         }
         ConnectionCommands::Export { id, file } => {

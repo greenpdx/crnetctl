@@ -1,8 +1,7 @@
 use crate::error::{NetctlError, NetctlResult};
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::path::Path;
 use tokio::process::Command;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Common VPN utility functions shared across all backends
 

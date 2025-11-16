@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::process::Command;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// Bridge plugin
 pub struct BridgePlugin {
@@ -18,6 +18,7 @@ pub struct BridgePlugin {
 
 /// Bridge interface instance
 struct BridgeInterface {
+    #[allow(dead_code)]
     uuid: String,
     config: ConnectionConfig,
     state: PluginState,

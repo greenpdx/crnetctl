@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::process::Command;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// TUN/TAP plugin
 pub struct TunTapPlugin {
@@ -18,6 +18,7 @@ pub struct TunTapPlugin {
 
 /// TUN/TAP device instance
 struct TunTapDevice {
+    #[allow(dead_code)]
     uuid: String,
     config: ConnectionConfig,
     state: PluginState,

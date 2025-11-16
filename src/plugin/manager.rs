@@ -252,10 +252,10 @@ impl PluginManager {
     #[cfg(feature = "dbus-nm")]
     async fn expose_plugin_on_dbus(
         &self,
-        conn: Arc<zbus::Connection>,
+        _conn: Arc<zbus::Connection>,
         plugin_id: &str,
         service_name: &str,
-        metadata: &PluginMetadata,
+        _metadata: &PluginMetadata,
     ) -> NetctlResult<()> {
         info!("Exposing plugin {} on D-Bus as {}", plugin_id, service_name);
 

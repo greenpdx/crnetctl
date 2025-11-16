@@ -3,7 +3,7 @@
 //! This module connects network monitoring events to D-Bus signal emission
 
 #[cfg(feature = "dbus-nm")]
-use crate::dbus::{DeviceInfo, DeviceState, NetworkManagerDBus, NM_DBUS_PATH, signals};
+use crate::dbus::{DeviceInfo, DeviceState, NetworkManagerDBus, signals};
 #[cfg(feature = "dbus-nm")]
 use crate::network_monitor::{NetworkEvent, NetworkMonitor};
 use crate::error::NetctlResult;

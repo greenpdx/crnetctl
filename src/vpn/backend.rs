@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use crate::plugin::ConnectionConfig;
-use crate::error::{NetctlError, NetctlResult};
+use crate::error::NetctlResult;
 
 /// Statistics for a VPN connection
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

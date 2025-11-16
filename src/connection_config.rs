@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::fs;
-use tracing::{info, warn};
+use tracing::info;
 
 /// Netctl connection configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

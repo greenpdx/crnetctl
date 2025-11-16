@@ -7,7 +7,6 @@
 use crate::error::{NetctlError, NetctlResult};
 use crate::validation;
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr};
 
 /// DHCP message type
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -109,6 +108,7 @@ impl Default for DhcpTestConfig {
 /// Controller for DHCP testing operations
 pub struct DhcpmController {
     /// Default interface to use
+    #[allow(dead_code)]
     default_interface: String,
 }
 

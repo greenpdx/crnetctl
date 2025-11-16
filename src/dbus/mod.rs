@@ -4,13 +4,15 @@
 //! allowing netctl to be used as a drop-in replacement for NetworkManager
 //! in applications that depend on the NetworkManager D-Bus API.
 
+#![allow(deprecated)]
+
 use crate::error::{NetctlError, NetctlResult};
 use crate::plugin::traits::PluginState;
 use zbus::{Connection, dbus_interface, SignalContext, fdo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// NetworkManager D-Bus service name
 pub const NM_DBUS_SERVICE: &str = "org.freedesktop.NetworkManager";
@@ -235,7 +237,7 @@ impl NetworkManagerDBus {
         &self,
         connection: &str,
         device: &str,
-        specific_object: &str,
+        _specific_object: &str,
     ) -> fdo::Result<String> {
         info!("Activating connection {} on device {}", connection, device);
         // Return active connection path

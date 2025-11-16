@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use arti_client::{TorClient, TorClientConfig};
 use tor_rtcompat::PreferredRuntime;
@@ -53,7 +53,7 @@ impl ArtiBackend {
 
     /// Build Tor client configuration from connection settings
     fn build_tor_config(&self, config: &ConnectionConfig) -> NetctlResult<TorClientConfig> {
-        let mut tor_config = TorClientConfig::default();
+        let tor_config = TorClientConfig::default();
         let settings = &config.settings;
 
         // Configure state directory

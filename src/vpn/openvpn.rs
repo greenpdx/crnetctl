@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::SystemTime;
 use tokio::process::{Child, Command};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::plugin::ConnectionConfig;
 use crate::error::{NetctlError, NetctlResult};
@@ -16,6 +16,7 @@ pub struct OpenVpnBackend {
     process: Option<Child>,
     interface_name: Option<String>,
     connected_since: Option<SystemTime>,
+    #[allow(dead_code)]
     config_path: Option<std::path::PathBuf>,
 }
 

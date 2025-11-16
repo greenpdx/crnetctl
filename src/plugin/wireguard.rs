@@ -5,10 +5,9 @@ use crate::error::{NetctlError, NetctlResult};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::process::Stdio;
 use tokio::process::Command;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// WireGuard plugin
 pub struct WireGuardPlugin {
@@ -21,6 +20,7 @@ pub struct WireGuardPlugin {
 
 /// WireGuard connection instance
 struct WireGuardConnection {
+    #[allow(dead_code)]
     uuid: String,
     config: ConnectionConfig,
     state: PluginState,

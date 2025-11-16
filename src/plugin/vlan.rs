@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::process::Command;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// VLAN plugin
 pub struct VlanPlugin {
@@ -18,6 +18,7 @@ pub struct VlanPlugin {
 
 /// VLAN interface instance
 struct VlanInterface {
+    #[allow(dead_code)]
     uuid: String,
     config: ConnectionConfig,
     state: PluginState,

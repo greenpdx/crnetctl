@@ -15,7 +15,7 @@ use axum::{
 };
 use netctl::{
     DhcpTestConfig, DhcpTestResult, DhcpmController, InterfaceController,
-    NetctlError, NetctlResult, WifiController,
+    NetctlError, WifiController,
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;

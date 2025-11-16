@@ -1,6 +1,6 @@
 //! DHCP server management via dora
 
-use crate::error::{NetctlError, NetctlResult};
+use crate::error::NetctlResult;
 use crate::validation;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -33,6 +33,7 @@ impl Default for DhcpConfig {
 
 pub struct DhcpController {
     config_path: PathBuf,
+    #[allow(dead_code)]
     dora_bin: PathBuf,
 }
 

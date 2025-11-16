@@ -6,7 +6,7 @@ use netctl::connection_config::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use clap::{Arg, Command as ClapCommand};
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
