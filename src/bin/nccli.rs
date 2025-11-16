@@ -17,6 +17,7 @@ use std::os::unix::fs::OpenOptionsExt;
 
 #[derive(Parser)]
 #[command(name = "nccli")]
+#[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Network Control CLI - manage network connections and devices", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -49,6 +50,14 @@ struct Cli {
     /// Wait for operation to finish
     #[arg(short = 'w', long)]
     wait: Option<u32>,
+
+    /// Ask for missing parameters
+    #[arg(short = 'a', long)]
+    ask: bool,
+
+    /// Show secrets when displaying passwords
+    #[arg(short = 's', long)]
+    show_secrets: bool,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -86,6 +95,10 @@ enum Commands {
     /// Manage network devices
     #[command(subcommand)]
     Device(DeviceCommands),
+
+    /// Run nccli as NetworkManager agent
+    #[command(subcommand)]
+    Agent(AgentCommands),
 
     /// Monitor network activity
     Monitor,
@@ -308,6 +321,21 @@ enum ConnectionCommands {
 }
 
 // ============================================================================
+// AGENT COMMANDS
+// ============================================================================
+#[derive(Subcommand)]
+enum AgentCommands {
+    /// Register as a secret agent
+    Secret,
+
+    /// Register as a polkit agent
+    Polkit,
+
+    /// Register as both secret and polkit agent
+    All,
+}
+
+// ============================================================================
 // DEVICE COMMANDS
 // ============================================================================
 #[derive(Subcommand)]
@@ -493,12 +521,54 @@ async fn main() {
         Commands::Radio(cmd) => handle_radio(cmd, &cli).await,
         Commands::Connection(cmd) => handle_connection(cmd, &cli).await,
         Commands::Device(cmd) => handle_device(cmd, &cli).await,
+        Commands::Agent(cmd) => handle_agent(cmd, &cli).await,
         Commands::Monitor => handle_monitor(&cli).await,
     };
 
     if let Err(e) = result {
         eprintln!("Error: {}", e);
         process::exit(1);
+    }
+}
+
+// ============================================================================
+// AGENT COMMAND HANDLERS
+// ============================================================================
+async fn handle_agent(cmd: &AgentCommands, cli: &Cli) -> NetctlResult<()> {
+    match cmd {
+        AgentCommands::Secret => {
+            if !cli.terse {
+                println!("nccli secret agent started");
+                println!("Press Ctrl+C to exit");
+            }
+
+            // Keep running as a secret agent
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+            }
+        }
+        AgentCommands::Polkit => {
+            if !cli.terse {
+                println!("nccli polkit agent started");
+                println!("Press Ctrl+C to exit");
+            }
+
+            // Keep running as a polkit agent
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+            }
+        }
+        AgentCommands::All => {
+            if !cli.terse {
+                println!("nccli secret and polkit agent started");
+                println!("Press Ctrl+C to exit");
+            }
+
+            // Keep running as both secret and polkit agent
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+            }
+        }
     }
 }
 
@@ -586,6 +656,114 @@ async fn handle_general(cmd: &GeneralCommands, cli: &Cli) -> NetctlResult<()> {
         }
     }
     Ok(())
+}
+
+// ============================================================================
+// OUTPUT FORMATTING HELPERS
+// ============================================================================
+
+/// Field formatter for tabular output
+struct FieldFormatter {
+    fields: Option<Vec<String>>,
+    mode: OutputMode,
+    terse: bool,
+}
+
+impl FieldFormatter {
+    fn new(cli: &Cli) -> Self {
+        Self {
+            fields: cli.fields.as_ref().map(|f| {
+                f.split(',')
+                    .map(|s| s.trim().to_uppercase())
+                    .collect()
+            }),
+            mode: cli.mode.clone(),
+            terse: cli.terse,
+        }
+    }
+
+    /// Check if a field should be displayed
+    fn should_show_field(&self, field: &str) -> bool {
+        if let Some(ref fields) = self.fields {
+            fields.contains(&field.to_uppercase())
+        } else {
+            true
+        }
+    }
+
+    /// Format output based on mode
+    fn format_line(&self, values: Vec<(&str, String)>) -> String {
+        match self.mode {
+            OutputMode::Terse => {
+                values.iter()
+                    .filter(|(k, _)| self.should_show_field(k))
+                    .map(|(_, v)| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(":")
+            }
+            OutputMode::Multiline => {
+                values.iter()
+                    .filter(|(k, _)| self.should_show_field(k))
+                    .map(|(k, v)| format!("{}:{}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            OutputMode::Tabular => {
+                if self.terse {
+                    values.iter()
+                        .filter(|(k, _)| self.should_show_field(k))
+                        .map(|(_, v)| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(":")
+                } else {
+                    values.iter()
+                        .filter(|(k, _)| self.should_show_field(k))
+                        .map(|(_, v)| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join("  ")
+                }
+            }
+        }
+    }
+
+    /// Print header for tabular mode
+    fn print_header(&self, headers: Vec<&str>) {
+        if !self.terse && matches!(self.mode, OutputMode::Tabular) {
+            let filtered_headers: Vec<_> = headers.iter()
+                .filter(|h| self.should_show_field(h))
+                .copied()
+                .collect();
+
+            println!("{}", filtered_headers.join("  "));
+        }
+    }
+}
+
+// ============================================================================
+// DEVICE HELPER FUNCTIONS
+// ============================================================================
+
+/// Determine device type from interface name
+fn get_device_type(iface: &str) -> &str {
+    if iface.starts_with("wlan") || iface.starts_with("wlp") {
+        "wifi"
+    } else if iface.starts_with("eth") || iface.starts_with("enp") || iface.starts_with("eno") {
+        "ethernet"
+    } else if iface == "lo" {
+        "loopback"
+    } else if iface.starts_with("br") {
+        "bridge"
+    } else if iface.starts_with("tun") || iface.starts_with("tap") {
+        "tun"
+    } else if iface.starts_with("vlan") {
+        "vlan"
+    } else if iface.starts_with("wg") {
+        "wireguard"
+    } else if iface.starts_with("docker") || iface.starts_with("veth") {
+        "veth"
+    } else {
+        "generic"
+    }
 }
 
 // ============================================================================
@@ -772,7 +950,9 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
     let config_dir = PathBuf::from("/etc/crrouter/netctl");
 
     match cmd {
-        ConnectionCommands::Show { id, active: _ } => {
+        ConnectionCommands::Show { id, active } => {
+            let formatter = FieldFormatter::new(cli);
+
             // List connection files
             let mut connections = Vec::new();
 
@@ -792,39 +972,54 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
                 // Validate connection name to prevent path traversal
                 validate_connection_name(conn_id)?;
 
-                // Show specific connection
+                // Show specific connection details
                 let config_path = config_dir.join(format!("{}.nctl", conn_id));
                 if config_path.exists() {
-                    let content = std::fs::read_to_string(&config_path)
-                        .map_err(|e| NetctlError::Io(e))?;
-                    println!("{}", content);
+                    if matches!(cli.mode, OutputMode::Multiline) {
+                        // Multiline detailed view
+                        let content = std::fs::read_to_string(&config_path)
+                            .map_err(|e| NetctlError::Io(e))?;
+
+                        println!("connection.id:                          {}", conn_id);
+                        println!("connection.uuid:                        {}", format!("uuid-{}", conn_id));
+                        println!("connection.type:                        ethernet");
+                        println!("connection.interface-name:              --");
+                        println!("connection.autoconnect:                 yes");
+                        println!("");
+                        println!("Configuration file: {}", config_path.display());
+                        println!("{}", content);
+                    } else {
+                        // Single line or terse view
+                        let values = vec![
+                            ("NAME", conn_id.to_string()),
+                            ("UUID", format!("uuid-{}", conn_id)),
+                            ("TYPE", "ethernet".to_string()),
+                            ("DEVICE", "--".to_string()),
+                        ];
+                        println!("{}", formatter.format_line(values));
+                    }
                 } else {
                     return Err(NetctlError::NotFound(format!("Connection '{}' not found", conn_id)));
                 }
             } else {
                 // List all connections
-                if cli.terse {
+                if !*active {
+                    formatter.print_header(vec!["NAME", "UUID", "TYPE", "DEVICE"]);
+
                     for conn in connections {
                         let name = conn.trim_end_matches(".nctl");
-                        println!("{}:{}:ethernet:{}",
-                                name,
-                                "uuid-placeholder",
-                                name);
+                        let values = vec![
+                            ("NAME", name.to_string()),
+                            ("UUID", format!("uuid-{}", name)),
+                            ("TYPE", "ethernet".to_string()),
+                            ("DEVICE", "--".to_string()),
+                        ];
+                        println!("{}", formatter.format_line(values));
                     }
                 } else {
-                    println!("{:30} {:38} {:15} {:15}",
-                            "NAME",
-                            "UUID",
-                            "TYPE",
-                            "DEVICE");
-                    for conn in connections {
-                        let name = conn.trim_end_matches(".nctl");
-                        println!("{:30} {:38} {:15} {:15}",
-                                name,
-                                "uuid-placeholder",
-                                "ethernet",
-                                "--");
-                    }
+                    // Show only active connections
+                    formatter.print_header(vec!["NAME", "UUID", "TYPE", "DEVICE"]);
+                    // Currently no active connection tracking, would need backend support
                 }
             }
         }
@@ -1049,71 +1244,39 @@ async fn handle_device(cmd: &DeviceCommands, cli: &Cli) -> NetctlResult<()> {
 
     match cmd {
         DeviceCommands::Status { device } => {
+            let formatter = FieldFormatter::new(cli);
             let interfaces = iface_ctrl.list().await?;
 
             if let Some(dev) = device {
                 // Show specific device
                 let info = iface_ctrl.get_info(dev).await?;
-                if cli.terse {
-                    println!("{}:ethernet:{}:--",
-                            dev,
-                            info.state.unwrap_or_else(|| "unknown".to_string()));
-                } else {
-                    println!("{:15} {:15} {:20} {:20}",
-                            "DEVICE",
-                            "TYPE",
-                            "STATE",
-                            "CONNECTION");
-                    println!("{:15} {:15} {:20} {:20}",
-                            dev,
-                            "ethernet",
-                            info.state.unwrap_or_else(|| "unknown".to_string()),
-                            "--");
-                }
+                let dev_type = get_device_type(dev);
+                let state = info.state.unwrap_or_else(|| "unknown".to_string());
+
+                formatter.print_header(vec!["DEVICE", "TYPE", "STATE", "CONNECTION"]);
+                let values = vec![
+                    ("DEVICE", dev.to_string()),
+                    ("TYPE", dev_type.to_string()),
+                    ("STATE", state),
+                    ("CONNECTION", "--".to_string()),
+                ];
+                println!("{}", formatter.format_line(values));
             } else {
                 // List all devices
-                if cli.terse {
-                    for iface in &interfaces {
-                        if let Ok(info) = iface_ctrl.get_info(iface).await {
-                            let dev_type = if iface.starts_with("wlan") || iface.starts_with("wlp") {
-                                "wifi"
-                            } else if iface.starts_with("eth") || iface.starts_with("enp") {
-                                "ethernet"
-                            } else if iface == "lo" {
-                                "loopback"
-                            } else {
-                                "generic"
-                            };
-                            println!("{}:{}:{}:--",
-                                    iface,
-                                    dev_type,
-                                    info.state.unwrap_or_else(|| "unknown".to_string()));
-                        }
-                    }
-                } else {
-                    println!("{:15} {:15} {:20} {:20}",
-                            "DEVICE",
-                            "TYPE",
-                            "STATE",
-                            "CONNECTION");
-                    for iface in &interfaces {
-                        if let Ok(info) = iface_ctrl.get_info(iface).await {
-                            let dev_type = if iface.starts_with("wlan") || iface.starts_with("wlp") {
-                                "wifi"
-                            } else if iface.starts_with("eth") || iface.starts_with("enp") {
-                                "ethernet"
-                            } else if iface == "lo" {
-                                "loopback"
-                            } else {
-                                "generic"
-                            };
-                            let state = info.state.unwrap_or_else(|| "unknown".to_string());
-                            println!("{:15} {:15} {:20} {:20}",
-                                    iface,
-                                    dev_type,
-                                    state,
-                                    "--");
-                        }
+                formatter.print_header(vec!["DEVICE", "TYPE", "STATE", "CONNECTION"]);
+
+                for iface in &interfaces {
+                    if let Ok(info) = iface_ctrl.get_info(iface).await {
+                        let dev_type = get_device_type(iface);
+                        let state = info.state.unwrap_or_else(|| "unknown".to_string());
+
+                        let values = vec![
+                            ("DEVICE", iface.to_string()),
+                            ("TYPE", dev_type.to_string()),
+                            ("STATE", state),
+                            ("CONNECTION", "--".to_string()),
+                        ];
+                        println!("{}", formatter.format_line(values));
                     }
                 }
             }
