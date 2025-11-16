@@ -47,7 +47,28 @@ Async network management tool with NetworkManager D-Bus compatibility.
 
 ## Installation
 
-### Option 1: Debian Package (Recommended)
+### Option 1: Automated Install Script (Recommended)
+
+```bash
+# Run the installation script
+sudo ./install.sh
+```
+
+The install script will:
+- Build the project with cargo
+- Install binaries to /usr/bin
+- Install systemd service files
+- Create configuration directories
+- Install man pages and documentation
+- Install example configurations
+- Set up runtime directories
+
+To uninstall:
+```bash
+sudo ./uninstall.sh
+```
+
+### Option 2: Debian Package
 
 ```bash
 # Build the Debian package
@@ -60,7 +81,7 @@ sudo apt --fix-broken install  # If needed for dependencies
 
 See `debian/BUILD.md` for detailed build instructions.
 
-### Option 2: Manual Installation
+### Option 3: Manual Installation
 
 ```bash
 # Build the project
@@ -69,6 +90,7 @@ cargo build --release
 # Install binaries
 sudo cp target/release/netctl /usr/bin/
 sudo cp target/release/nm-converter /usr/bin/
+sudo cp target/release/libnccli /usr/bin/
 
 # Install example configuration files
 sudo mkdir -p /usr/share/doc/netctl/examples
@@ -84,6 +106,7 @@ sudo systemctl daemon-reload
 sudo mkdir -p /usr/share/man/man1 /usr/share/man/man5 /usr/share/man/man7
 sudo cp docs/netctl.1 /usr/share/man/man1/
 sudo cp docs/nm-converter.1 /usr/share/man/man1/
+sudo cp docs/libnccli.1 /usr/share/man/man1/
 sudo cp docs/netctl.nctl.5 /usr/share/man/man5/
 sudo cp docs/netctl-plugin.7 /usr/share/man/man7/
 sudo mandb  # Update man database
