@@ -28,7 +28,7 @@ impl CRClient {
     ///
     /// # Example
     /// ```no_run
-    /// use netctl::libnm_compat::CRClient;
+    /// use netctl::libcr_compat::CRClient;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -57,7 +57,7 @@ impl CRClient {
     ///
     /// # Example
     /// ```no_run
-    /// # use netctl::libnm_compat::CRClient;
+    /// # use netctl::libcr_compat::CRClient;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let client = CRClient::new().await?;
@@ -90,7 +90,7 @@ impl CRClient {
     ///
     /// # Example
     /// ```no_run
-    /// # use netctl::libnm_compat::CRClient;
+    /// # use netctl::libcr_compat::CRClient;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let client = CRClient::new().await?;
@@ -141,7 +141,7 @@ impl CRClient {
     ///
     /// # Example
     /// ```no_run
-    /// # use netctl::libnm_compat::CRClient;
+    /// # use netctl::libcr_compat::CRClient;
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let client = CRClient::new().await?;
