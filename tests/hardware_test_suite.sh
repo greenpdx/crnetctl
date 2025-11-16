@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Hardware Test Suite for nccli
+# Hardware Test Suite for libnccli
 #
-# This script runs automated hardware tests for nccli
+# This script runs automated hardware tests for libnccli
 # Requires root privileges for network operations
 
 set -e
@@ -21,10 +21,10 @@ TESTS_FAILED=0
 TESTS_SKIPPED=0
 
 # Configuration
-NCCLI="${NCCLI:-nccli}"
+NCCLI="${NCCLI:-libnccli}"
 TEST_INTERFACE="${TEST_INTERFACE:-eth1}"
 TEST_WIFI_INTERFACE="${TEST_WIFI_INTERFACE:-wlan0}"
-TEST_SSID="nccli-test-ap-$$"
+TEST_SSID="libnccli-test-ap-$$"
 TEST_PASSWORD="test-password-123"
 VERBOSE="${VERBOSE:-0}"
 
@@ -35,15 +35,15 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-# Check if nccli is available
+# Check if libnccli is available
 if ! command -v "$NCCLI" &> /dev/null; then
-    echo -e "${RED}Error: nccli not found${NC}"
-    echo "Install nccli first or set NCCLI environment variable"
+    echo -e "${RED}Error: libnccli not found${NC}"
+    echo "Install libnccli first or set NCCLI environment variable"
     exit 1
 fi
 
 # Logging
-LOG_FILE="/tmp/nccli_test_$(date +%Y%m%d_%H%M%S).log"
+LOG_FILE="/tmp/libnccli_test_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$LOG_FILE")
 exec 2>&1
 
@@ -144,9 +144,9 @@ cleanup() {
 trap cleanup EXIT
 
 # Start tests
-print_header "nccli Hardware Test Suite"
+print_header "libnccli Hardware Test Suite"
 echo "Started: $(date)"
-echo "nccli: $NCCLI"
+echo "libnccli: $NCCLI"
 echo "Log file: $LOG_FILE"
 echo "Test interface: $TEST_INTERFACE"
 echo "WiFi interface: $TEST_WIFI_INTERFACE"

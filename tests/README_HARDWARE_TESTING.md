@@ -1,10 +1,10 @@
-# Hardware Testing Guide for nccli
+# Hardware Testing Guide for libnccli
 
-This guide describes how to set up and perform hardware testing for nccli using multiple machines to test real network operations.
+This guide describes how to set up and perform hardware testing for libnccli using multiple machines to test real network operations.
 
 ## Overview
 
-Hardware testing validates nccli functionality with real network hardware, including:
+Hardware testing validates libnccli functionality with real network hardware, including:
 - Physical network interfaces
 - WiFi adapters and connections
 - Multi-machine networking scenarios
@@ -15,7 +15,7 @@ Hardware testing validates nccli functionality with real network hardware, inclu
 ### Minimum Setup
 
 **2 Machines Required:**
-1. **Test Controller** (Machine A) - Runs nccli commands
+1. **Test Controller** (Machine A) - Runs libnccli commands
 2. **Test Target** (Machine B) - Acts as network peer/client
 
 **Network Hardware:**
@@ -43,7 +43,7 @@ Hardware testing validates nccli functionality with real network hardware, inclu
 │  ┌───────────────────────────────────┐                      │
 │  │  eth0: 192.168.100.1/24          │                      │
 │  │  wlan0: WiFi AP (10.42.0.1/24)   │                      │
-│  │  Runs: nccli, hostapd, DHCP      │                      │
+│  │  Runs: libnccli, hostapd, DHCP      │                      │
 │  └───────┬──────────────┬────────────┘                      │
 │          │              │                                     │
 │   Ethernet │              WiFi│                               │
@@ -72,13 +72,13 @@ Hardware testing validates nccli functionality with real network hardware, inclu
 sudo apt-get update
 sudo apt-get install -y iproute2 iw hostapd dnsmasq iperf3
 
-# Build nccli
+# Build libnccli
 cd /path/to/LnxNetCtl
-cargo build --release --bin nccli
-sudo cp target/release/nccli /usr/local/bin/
+cargo build --release --bin libnccli
+sudo cp target/release/libnccli /usr/local/bin/
 
 # Verify installation
-nccli --help
+libnccli --help
 
 # Create test configuration directory
 sudo mkdir -p /etc/crrouter/netctl
@@ -116,7 +116,7 @@ Test basic interface management operations.
 **Test 1.1: List All Devices**
 ```bash
 # Machine A
-nccli device status
+libnccli device status
 
 # Expected: Shows all network interfaces
 # Verify: eth0, wlan0, lo are listed
@@ -125,8 +125,8 @@ nccli device status
 **Test 1.2: Show Device Details**
 ```bash
 # Machine A
-nccli device show eth0
-nccli device show wlan0
+libnccli device show eth0
+libnccli device show wlan0
 
 # Expected: Detailed info including MAC, MTU, IPs
 # Verify: All fields populated correctly
@@ -135,10 +135,10 @@ nccli device show wlan0
 **Test 1.3: Interface Up/Down**
 ```bash
 # Machine A
-nccli device disconnect eth1
+libnccli device disconnect eth1
 ip link show eth1 | grep DOWN
 
-nccli device connect eth1
+libnccli device connect eth1
 ip link show eth1 | grep UP
 
 # Expected: Interface state changes correctly
@@ -151,7 +151,7 @@ Test WiFi scanning and detection.
 **Test 2.1: WiFi Device List**
 ```bash
 # Machine A
-nccli device wifi list
+libnccli device wifi list
 
 # Expected: Shows available WiFi networks
 # Verify: Nearby SSIDs are detected
@@ -160,7 +160,7 @@ nccli device wifi list
 **Test 2.2: WiFi Scan with Specific Interface**
 ```bash
 # Machine A
-nccli device wifi list --ifname wlan0
+libnccli device wifi list --ifname wlan0
 
 # Expected: Scan results from wlan0
 # Verify: Signal strength, channel, BSSID shown
@@ -169,7 +169,7 @@ nccli device wifi list --ifname wlan0
 **Test 2.3: Terse WiFi Output**
 ```bash
 # Machine A
-nccli -t device wifi list
+libnccli -t device wifi list
 
 # Expected: Machine-readable output
 # Verify: Format is BSSID:SSID:Mode:Signal:*
@@ -182,9 +182,9 @@ Test WiFi Access Point functionality.
 **Test 3.1: Create WiFi Hotspot**
 ```bash
 # Machine A
-nccli device wifi hotspot \
+libnccli device wifi hotspot \
   --ifname wlan0 \
-  --ssid "nccli-test-ap" \
+  --ssid "libnccli-test-ap" \
   --password "testpass123" \
   --channel 6
 
@@ -192,7 +192,7 @@ nccli device wifi hotspot \
 
 # Machine B
 # Scan for the AP
-sudo iw dev wlan0 scan | grep "nccli-test-ap"
+sudo iw dev wlan0 scan | grep "libnccli-test-ap"
 
 # Expected: Machine B sees the AP
 ```
@@ -203,7 +203,7 @@ sudo iw dev wlan0 scan | grep "nccli-test-ap"
 # Create wpa_supplicant config
 cat > /tmp/wpa_test.conf <<EOF
 network={
-    ssid="nccli-test-ap"
+    ssid="libnccli-test-ap"
     psk="testpass123"
 }
 EOF
@@ -238,7 +238,7 @@ Test connection configuration and management.
 **Test 4.1: Add Ethernet Connection**
 ```bash
 # Machine A
-nccli connection add \
+libnccli connection add \
   --type ethernet \
   --con-name test-eth \
   --ifname eth1 \
@@ -255,7 +255,7 @@ cat /etc/crrouter/netctl/test-eth.nctl
 **Test 4.2: Add WiFi Connection**
 ```bash
 # Machine A
-nccli connection add \
+libnccli connection add \
   --type wifi \
   --con-name test-wifi \
   --ifname wlan0 \
@@ -272,7 +272,7 @@ cat /etc/crrouter/netctl/test-wifi.nctl
 **Test 4.3: Activate Connection**
 ```bash
 # Machine A
-nccli connection up test-eth
+libnccli connection up test-eth
 
 # Verify
 ip addr show eth1 | grep 192.168.200.10
@@ -283,7 +283,7 @@ ip addr show eth1 | grep 192.168.200.10
 **Test 4.4: Deactivate Connection**
 ```bash
 # Machine A
-nccli connection down test-eth
+libnccli connection down test-eth
 
 # Expected: Success message
 ```
@@ -291,7 +291,7 @@ nccli connection down test-eth
 **Test 4.5: List Connections**
 ```bash
 # Machine A
-nccli connection show
+libnccli connection show
 
 # Expected: Shows all configured connections
 # Verify: test-eth and test-wifi are listed
@@ -300,7 +300,7 @@ nccli connection show
 **Test 4.6: Delete Connection**
 ```bash
 # Machine A
-nccli connection delete test-eth
+libnccli connection delete test-eth
 
 # Verify
 ls /etc/crrouter/netctl/test-eth.nctl
@@ -315,13 +315,13 @@ Test actual network communication.
 **Test 5.1: Ethernet Communication**
 ```bash
 # Machine A - Set static IP
-nccli connection add \
+libnccli connection add \
   --type ethernet \
   --con-name test-direct \
   --ifname eth0 \
   --ip4 192.168.100.1/24
 
-nccli connection up test-direct
+libnccli connection up test-direct
 
 # Machine C - Set static IP
 sudo ip addr add 192.168.100.2/24 dev eth0
@@ -367,7 +367,7 @@ Test WiFi radio on/off functionality.
 **Test 6.1: WiFi Radio Status**
 ```bash
 # Machine A
-nccli radio wifi
+libnccli radio wifi
 
 # Expected: Shows "enabled"
 ```
@@ -375,7 +375,7 @@ nccli radio wifi
 **Test 6.2: Turn WiFi Off**
 ```bash
 # Machine A
-nccli radio wifi off
+libnccli radio wifi off
 
 # Verify
 ip link show wlan0 | grep DOWN
@@ -386,7 +386,7 @@ ip link show wlan0 | grep DOWN
 **Test 6.3: Turn WiFi On**
 ```bash
 # Machine A
-nccli radio wifi on
+libnccli radio wifi on
 
 # Verify
 ip link show wlan0 | grep UP
@@ -401,9 +401,9 @@ Test different output modes.
 **Test 7.1: Terse Mode**
 ```bash
 # Machine A
-nccli -t general status
-nccli -t device status
-nccli -t connection show
+libnccli -t general status
+libnccli -t device status
+libnccli -t connection show
 
 # Expected: Colon-separated machine-readable output
 ```
@@ -411,7 +411,7 @@ nccli -t connection show
 **Test 7.2: Tabular Mode**
 ```bash
 # Machine A
-nccli -m tabular device status
+libnccli -m tabular device status
 
 # Expected: Table format with headers
 ```
@@ -419,7 +419,7 @@ nccli -m tabular device status
 **Test 7.3: Pretty Mode**
 ```bash
 # Machine A
-nccli -p device show eth0
+libnccli -p device show eth0
 
 # Expected: Human-readable formatted output
 ```
@@ -433,9 +433,9 @@ Test system under load.
 # Machine A
 for i in {1..20}; do
   echo "Iteration $i"
-  nccli device disconnect eth1
+  libnccli device disconnect eth1
   sleep 1
-  nccli device connect eth1
+  libnccli device connect eth1
   sleep 1
 done
 
@@ -447,7 +447,7 @@ done
 # Machine A
 for i in {1..10}; do
   echo "Scan $i"
-  nccli device wifi list > /tmp/scan_$i.txt
+  libnccli device wifi list > /tmp/scan_$i.txt
   sleep 2
 done
 
@@ -476,7 +476,7 @@ Test error conditions and recovery.
 **Test 9.1: Invalid Interface**
 ```bash
 # Machine A
-nccli device show nonexistent-iface
+libnccli device show nonexistent-iface
 
 # Expected: Error message about interface not found
 ```
@@ -484,7 +484,7 @@ nccli device show nonexistent-iface
 **Test 9.2: Invalid Connection**
 ```bash
 # Machine A
-nccli connection up nonexistent-connection
+libnccli connection up nonexistent-connection
 
 # Expected: Error message about connection not found
 ```
@@ -492,7 +492,7 @@ nccli connection up nonexistent-connection
 **Test 9.3: Permission Tests**
 ```bash
 # Machine A (as non-root user)
-nccli device connect eth0
+libnccli device connect eth0
 
 # Expected: May fail with permission error
 # This tests proper permission handling
@@ -511,7 +511,7 @@ Create a test results file for each test run:
 ```bash
 # Start test session
 echo "Test Session: $(date)" > test_results.txt
-echo "nccli version: $(nccli --version)" >> test_results.txt
+echo "libnccli version: $(libnccli --version)" >> test_results.txt
 echo "Machine: $(hostname)" >> test_results.txt
 echo "" >> test_results.txt
 
@@ -565,10 +565,10 @@ ip addr show eth0
 
 ```bash
 # Run with sudo for network operations
-sudo nccli device connect eth0
+sudo libnccli device connect eth0
 
 # Or add capabilities
-sudo setcap cap_net_admin,cap_net_raw+ep /usr/local/bin/nccli
+sudo setcap cap_net_admin,cap_net_raw+ep /usr/local/bin/libnccli
 ```
 
 ## Multi-Site Testing
@@ -600,10 +600,10 @@ Run these tests daily to catch regressions:
 #!/bin/bash
 # daily_tests.sh
 
-nccli general status
-nccli device status
-nccli device wifi list
-nccli connection show
+libnccli general status
+libnccli device status
+libnccli device wifi list
+libnccli connection show
 ```
 
 ### Weekly Full Test
@@ -642,7 +642,7 @@ sudo cp -r /etc/crrouter /etc/crrouter.backup
 ```bash
 # Remove test connections
 for conn in /etc/crrouter/netctl/test-*.nctl; do
-  nccli connection delete $(basename $conn .nctl)
+  libnccli connection delete $(basename $conn .nctl)
 done
 
 # Stop test services
@@ -658,4 +658,4 @@ sudo ip link set eth1 down
 
 - `hardware_test_suite.sh` - Automated test runner
 - `test_scenarios.md` - Additional test scenarios
-- `../docs/nccli.md` - nccli user documentation
+- `../docs/libnccli.md` - libnccli user documentation

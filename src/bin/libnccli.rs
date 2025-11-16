@@ -1,4 +1,4 @@
-//! nccli - Network Control CLI Tool
+//! libnccli - Network Control CLI Tool
 //!
 //! A comprehensive network management command-line interface
 //! providing complete network control using the netctl backend
@@ -16,7 +16,7 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 
 #[derive(Parser)]
-#[command(name = "nccli")]
+#[command(name = "libnccli")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Network Control CLI - manage network connections and devices", long_about = None)]
 struct Cli {
@@ -96,7 +96,7 @@ enum Commands {
     #[command(subcommand)]
     Device(DeviceCommands),
 
-    /// Run nccli as NetworkManager agent
+    /// Run libnccli as NetworkManager agent
     #[command(subcommand)]
     Agent(AgentCommands),
 
@@ -538,7 +538,7 @@ async fn handle_agent(cmd: &AgentCommands, cli: &Cli) -> NetctlResult<()> {
     match cmd {
         AgentCommands::Secret => {
             if !cli.terse {
-                println!("nccli secret agent started");
+                println!("libnccli secret agent started");
                 println!("Press Ctrl+C to exit");
             }
 
@@ -549,7 +549,7 @@ async fn handle_agent(cmd: &AgentCommands, cli: &Cli) -> NetctlResult<()> {
         }
         AgentCommands::Polkit => {
             if !cli.terse {
-                println!("nccli polkit agent started");
+                println!("libnccli polkit agent started");
                 println!("Press Ctrl+C to exit");
             }
 
@@ -560,7 +560,7 @@ async fn handle_agent(cmd: &AgentCommands, cli: &Cli) -> NetctlResult<()> {
         }
         AgentCommands::All => {
             if !cli.terse {
-                println!("nccli secret and polkit agent started");
+                println!("libnccli secret and polkit agent started");
                 println!("Press Ctrl+C to exit");
             }
 
@@ -1157,7 +1157,7 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
                 println!("Use your text editor to edit: {}", config_path.display());
             } else {
                 println!("Interactive editor not fully implemented");
-                println!("Use 'nccli connection add' to create a new connection");
+                println!("Use 'libnccli connection add' to create a new connection");
             }
         }
         ConnectionCommands::Delete { id } => {
