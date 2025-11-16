@@ -10,7 +10,10 @@
 
 pub mod traits;
 pub mod manager;
+
+#[cfg(feature = "plugins")]
 pub mod loader;
+
 pub mod config;
 
 // Built-in plugins
@@ -23,4 +26,6 @@ pub mod bridge;
 pub use traits::{NetworkPlugin, PluginCapability, PluginMetadata, PluginState, ConnectionConfig, ConnectionStats};
 pub use manager::PluginManager;
 pub use config::{PluginConfig, PluginConfigManager};
+
+#[cfg(feature = "plugins")]
 pub use loader::PluginLoader;

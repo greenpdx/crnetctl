@@ -26,12 +26,16 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use lnxnetctl::vpn::{VpnManager, wireguard, openvpn, ipsec, arti};
+//! use lnxnetctl::vpn::{VpnManager, wireguard, openvpn, ipsec};
+//! #[cfg(feature = "vpn-tor")]
+//! use lnxnetctl::vpn::arti;
 //!
 //! let mut manager = VpnManager::new("/etc/netctl".into());
 //! manager.register_backend("wireguard", wireguard::create_backend);
 //! manager.register_backend("openvpn", openvpn::create_backend);
 //! manager.register_backend("ipsec", ipsec::create_backend);
+//!
+//! #[cfg(feature = "vpn-tor")]
 //! manager.register_backend("arti", arti::create_backend);
 //!
 //! // Create and connect to a VPN
@@ -45,6 +49,8 @@ pub mod manager;
 pub mod wireguard;
 pub mod openvpn;
 pub mod ipsec;
+
+#[cfg(feature = "vpn-tor")]
 pub mod arti;
 
 pub use backend::{VpnBackend, VpnBackendFactory, VpnState, VpnStats};

@@ -27,14 +27,13 @@ name = "libnccli"
 path = "src/bin/libnccli.rs"
 
 [dependencies]
-# Async runtime
-tokio = { version = "1", features = ["full"] }
+# Async runtime - optimized features only
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "fs", "time", "sync", "io-util", "net"] }
 async-trait = "0.1"
-futures = "0.3"
+futures = "0.3"  # Required for TryStreamExt used by rtnetlink
 
 # CLI
 clap = { version = "4", features = ["derive"] }
-colored = "2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -59,15 +58,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "1.0"
 anyhow = "1.0"
 
-# Dynamic plugin loading
-libloading = "0.8"
+# Optional: Dynamic plugin loading
+libloading = { version = "0.8", optional = true }
 
-# DHCP testing
-dhcpm = { git = "https://github.com/leshow/dhcpm", default-features = false }
+# Optional: DHCP testing (not fully implemented)
+dhcpm = { git = "https://github.com/leshow/dhcpm", default-features = false, optional = true }
 
-# Tor via Arti
-arti-client = "0.23"
-tor-rtcompat = "0.23"
+# Optional: Tor via Arti
+arti-client = { version = "0.23", optional = true }
+tor-rtcompat = { version = "0.23", optional = true }
 
 [dev-dependencies]
 # Testing
@@ -81,8 +80,12 @@ assert_cmd = "2"
 predicates = "3"
 
 [features]
-default = ["dbus-nm"]
+default = ["dbus-nm", "plugins", "vpn-tor"]
 dbus-nm = []  # NetworkManager D-Bus compatibility
+plugins = ["dep:libloading"]  # Dynamic plugin loading
+vpn-tor = ["dep:arti-client", "dep:tor-rtcompat"]  # Tor VPN support via Arti
+dhcp-testing = ["dep:dhcpm"]  # DHCP testing (incomplete implementation)
+full = ["plugins", "vpn-tor", "dhcp-testing"]  # All optional features
 
 [profile.release]
 opt-level = 3

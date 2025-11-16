@@ -18,7 +18,10 @@ pub mod interface;
 pub mod wifi;
 pub mod hostapd;
 pub mod dhcp;
+
+#[cfg(feature = "dhcp-testing")]
 pub mod dhcpm;
+
 pub mod routing;
 pub mod device;
 pub mod plugin;
@@ -40,10 +43,13 @@ pub use interface::{InterfaceController, InterfaceInfo, IpAddress, InterfaceStat
 pub use wifi::{WifiController, WifiDeviceInfo, RegDomain, ScanResult};
 pub use hostapd::{HostapdController, AccessPointConfig};
 pub use dhcp::{DhcpController, DhcpConfig};
+
+#[cfg(feature = "dhcp-testing")]
 pub use dhcpm::{
     DhcpmController, DhcpTestConfig, DhcpTestResult, DhcpResponse,
     DhcpMessageType, DhcpOption,
 };
+
 pub use routing::RoutingController;
 pub use device::{
     DeviceController, Device, DeviceType, DeviceState, DeviceCapabilities,
@@ -51,9 +57,12 @@ pub use device::{
 };
 pub use plugin::{
     NetworkPlugin, PluginCapability, PluginMetadata, PluginState,
-    ConnectionConfig, ConnectionStats, PluginManager, PluginLoader,
+    ConnectionConfig, ConnectionStats, PluginManager,
     PluginConfig, PluginConfigManager,
 };
+
+#[cfg(feature = "plugins")]
+pub use plugin::PluginLoader;
 pub use vpn::{
     VpnBackend, VpnBackendFactory, VpnManager, VpnState, VpnStats,
 };
