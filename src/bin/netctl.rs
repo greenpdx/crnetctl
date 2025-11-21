@@ -40,6 +40,10 @@ enum Commands {
     #[command(subcommand)]
     Wifi(WifiCommands),
 
+    /// Connection management (activate/deactivate configured connections)
+    #[command(subcommand)]
+    Connection(ConnectionCommands),
+
     /// Access Point management
     #[command(subcommand)]
     Ap(ApCommands),
@@ -147,6 +151,22 @@ enum WifiCommands {
     GetTxpower { interface: String },
     /// Set TX power
     SetTxpower { interface: String, power: String },
+}
+
+#[derive(Subcommand)]
+enum ConnectionCommands {
+    /// List available connections
+    List,
+    /// Show connection details
+    Show { name: String },
+    /// Activate a connection
+    Up { name: String },
+    /// Deactivate a connection
+    Down { interface: String },
+    /// List active connections
+    Active,
+    /// Auto-connect all connections with autoconnect=true
+    AutoConnect,
 }
 
 #[derive(Subcommand)]
@@ -304,6 +324,7 @@ async fn main() {
         Commands::Device(ref cmd) => handle_device(cmd, &cli).await,
         Commands::Interface(ref cmd) => handle_interface(cmd, &cli).await,
         Commands::Wifi(ref cmd) => handle_wifi(cmd, &cli).await,
+        Commands::Connection(ref cmd) => handle_connection(cmd, &cli).await,
         Commands::Ap(ref cmd) => handle_ap(cmd, &cli).await,
         Commands::Dhcp(ref cmd) => handle_dhcp(cmd, &cli).await,
         Commands::Dns(ref cmd) => handle_dns(cmd, &cli).await,
@@ -527,6 +548,103 @@ async fn handle_wifi(cmd: &WifiCommands, cli: &Cli) -> NetctlResult<()> {
             println!("Set TX power to {} on {}", power, interface);
         }
     }
+    Ok(())
+}
+
+async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<()> {
+    let conn_mgr = ConnectionManager::new(None);
+    conn_mgr.initialize().await?;
+
+    match cmd {
+        ConnectionCommands::List => {
+            let connections = conn_mgr.list_connections().await?;
+
+            if cli.output == "json" {
+                println!("{}", serde_json::to_string_pretty(&connections)
+                    .map_err(|e| NetctlError::ParseError(format!("JSON error: {}", e)))?);
+            } else {
+                if connections.is_empty() {
+                    println!("No connections configured");
+                } else {
+                    println!("Available connections:");
+                    for conn in connections {
+                        println!("  {}", conn);
+                    }
+                }
+            }
+        }
+        ConnectionCommands::Show { name } => {
+            let config = conn_mgr.load_connection(name).await?;
+
+            if cli.output == "json" {
+                println!("{}", serde_json::to_string_pretty(&config)
+                    .map_err(|e| NetctlError::ParseError(format!("JSON error: {}", e)))?);
+            } else {
+                println!("Connection: {}", config.connection.name);
+                println!("UUID: {}", config.connection.uuid);
+                println!("Type: {}", config.connection.conn_type);
+                println!("Autoconnect: {}", config.connection.autoconnect);
+
+                if let Some(iface) = &config.connection.interface_name {
+                    println!("Interface: {}", iface);
+                }
+
+                if let Some(wifi) = &config.wifi {
+                    println!("\nWiFi:");
+                    println!("  SSID: {}", wifi.ssid);
+                    println!("  Mode: {}", wifi.mode);
+                }
+
+                if let Some(ipv4) = &config.ipv4 {
+                    println!("\nIPv4:");
+                    println!("  Method: {}", ipv4.method);
+                    if let Some(addr) = &ipv4.address {
+                        println!("  Address: {}", addr);
+                    }
+                    if let Some(gw) = &ipv4.gateway {
+                        println!("  Gateway: {}", gw);
+                    }
+                }
+            }
+        }
+        ConnectionCommands::Up { name } => {
+            println!("Activating connection: {}", name);
+            conn_mgr.activate_connection(name).await?;
+            println!("Connection '{}' activated successfully", name);
+        }
+        ConnectionCommands::Down { interface } => {
+            println!("Deactivating connection on: {}", interface);
+            conn_mgr.deactivate_connection(interface).await?;
+            println!("Connection on '{}' deactivated", interface);
+        }
+        ConnectionCommands::Active => {
+            let active = conn_mgr.list_active_connections().await;
+
+            if cli.output == "json" {
+                println!("{}", serde_json::to_string_pretty(&active)
+                    .map_err(|e| NetctlError::ParseError(format!("JSON error: {}", e)))?);
+            } else {
+                if active.is_empty() {
+                    println!("No active connections");
+                } else {
+                    println!("Active connections:");
+                    for conn in active {
+                        println!("  {} on {} ({}{})",
+                                 conn.name,
+                                 conn.interface,
+                                 conn.conn_type,
+                                 if conn.dhcp_active { ", DHCP" } else { "" });
+                    }
+                }
+            }
+        }
+        ConnectionCommands::AutoConnect => {
+            println!("Auto-connecting configured connections...");
+            conn_mgr.auto_connect().await?;
+            println!("Auto-connect completed");
+        }
+    }
+
     Ok(())
 }
 

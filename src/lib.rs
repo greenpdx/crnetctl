@@ -16,8 +16,11 @@ pub mod error;
 pub mod validation;
 pub mod interface;
 pub mod wifi;
+pub mod wpa_supplicant;
 pub mod hostapd;
 pub mod dhcp;
+pub mod dhcp_client;
+pub mod link_monitor;
 
 #[cfg(feature = "dhcp-testing")]
 pub mod dhcpm;
@@ -26,6 +29,7 @@ pub mod routing;
 pub mod device;
 pub mod plugin;
 pub mod connection_config;
+pub mod connection_manager;
 pub mod vpn;
 pub mod network_monitor;
 pub mod libcr_compat;
@@ -41,8 +45,17 @@ pub mod dbus_integration;
 pub use error::{NetctlError, NetctlResult};
 pub use interface::{InterfaceController, InterfaceInfo, IpAddress, InterfaceStats};
 pub use wifi::{WifiController, WifiDeviceInfo, RegDomain, ScanResult};
+pub use wpa_supplicant::WpaSupplicantController;
 pub use hostapd::{HostapdController, AccessPointConfig};
 pub use dhcp::{DhcpController, DhcpConfig};
+pub use dhcp_client::{DhcpClientController, DhcpClientState, DhcpLease};
+pub use link_monitor::{LinkMonitor, LinkState, LinkStateEvent, InterfaceConfig};
+pub use connection_manager::{ConnectionManager, ActiveConnection};
+pub use connection_config::{
+    NetctlConnectionConfig, ConnectionConfigManager,
+    ConnectionSection, WifiSection, WifiSecuritySection,
+    IpConfigSection, EthernetSection, VpnSection,
+};
 
 #[cfg(feature = "dhcp-testing")]
 pub use dhcpm::{

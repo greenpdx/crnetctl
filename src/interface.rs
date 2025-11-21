@@ -124,6 +124,34 @@ impl InterfaceController {
         self.run_ip(&["link", "set", "dev", interface, "down"]).await
     }
 
+    /// Get link state (carrier status)
+    pub async fn get_link_state(&self, interface: &str) -> NetctlResult<bool> {
+        validation::validate_interface_name(interface)?;
+
+        // Check if interface exists
+        let sys_path = format!("/sys/class/net/{}", interface);
+        if !Path::new(&sys_path).exists() {
+            return Err(NetctlError::InterfaceNotFound(interface.to_string()));
+        }
+
+        // Read operstate from sysfs
+        // Possible values: up, down, unknown, notpresent, lowerlayerdown, testing, dormant
+        match self.read_sysfs_string(interface, "operstate").await {
+            Some(state) => {
+                let state = state.trim().to_lowercase();
+                // Consider "up" as link up, everything else as down
+                Ok(state == "up")
+            }
+            None => {
+                // If we can't read operstate, check carrier file
+                match self.read_sysfs_string(interface, "carrier").await {
+                    Some(carrier) => Ok(carrier.trim() == "1"),
+                    None => Ok(false),
+                }
+            }
+        }
+    }
+
     /// Set IP address
     pub async fn set_ip(&self, interface: &str, address: &str, prefix_len: u8) -> NetctlResult<()> {
         validation::validate_interface_name(interface)?;

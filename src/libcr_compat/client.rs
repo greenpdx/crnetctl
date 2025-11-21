@@ -4,12 +4,15 @@ use crate::error::{NetctlError, NetctlResult};
 use crate::device::DeviceController;
 use crate::interface::InterfaceController;
 use crate::wifi::WifiController;
+use crate::dhcp_client::DhcpClientController;
+use crate::wpa_supplicant::WpaSupplicantController;
 use super::device::CRDevice;
 use super::connection::CRConnection;
 use super::active_connection::CRActiveConnection;
 use super::enums::{CRState, CRConnectivityState};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
 
 /// Main client for interacting with network management (equivalent to NMClient)
 ///
@@ -19,6 +22,8 @@ pub struct CRClient {
     device_controller: Arc<DeviceController>,
     interface_controller: Arc<InterfaceController>,
     wifi_controller: Arc<WifiController>,
+    dhcp_client: Arc<DhcpClientController>,
+    wpa_supplicant: Arc<WpaSupplicantController>,
     state: Arc<RwLock<CRState>>,
     connectivity: Arc<RwLock<CRConnectivityState>>,
 }
@@ -41,6 +46,8 @@ impl CRClient {
             device_controller: Arc::new(DeviceController::new()),
             interface_controller: Arc::new(InterfaceController::new()),
             wifi_controller: Arc::new(WifiController::new()),
+            dhcp_client: Arc::new(DhcpClientController::new()),
+            wpa_supplicant: Arc::new(WpaSupplicantController::new()),
             state: Arc::new(RwLock::new(CRState::ConnectedGlobal)),
             connectivity: Arc::new(RwLock::new(CRConnectivityState::Full)),
         })
@@ -163,8 +170,63 @@ impl CRClient {
             return Err(NetctlError::InvalidParameter("Device required for activation".to_string()));
         };
 
-        // Activate the connection
+        info!("Activating connection '{}' on interface {}", connection.get_id(), iface);
+
+        // Bring interface up first
         self.interface_controller.up(&iface).await?;
+
+        // Handle WiFi connection
+        if connection.is_type_wifi() {
+            if let Some(wireless_config) = connection.get_setting_wireless() {
+                let ssid = String::from_utf8_lossy(&wireless_config.ssid).to_string();
+                info!("Connecting to WiFi network '{}' on {}", ssid, iface);
+
+                // Get WiFi security settings if present
+                let psk = connection.settings.get("wifi-security")
+                    .and_then(|s| s.properties.get("psk"))
+                    .map(|s| s.as_str());
+
+                // Connect to WiFi
+                self.wpa_supplicant.connect(&iface, &ssid, psk).await?;
+
+                info!("WiFi connected on {}", iface);
+            }
+        }
+
+        // Handle IP configuration
+        let needs_dhcp = if let Some(ipv4_config) = connection.get_setting_ip4_config() {
+            ipv4_config.method == "auto"
+        } else {
+            // Default to DHCP if no IP config specified
+            true
+        };
+
+        if needs_dhcp {
+            info!("Starting DHCP client on {} (method: auto)", iface);
+            // Start DHCP client
+            if let Err(e) = self.dhcp_client.start(&iface).await {
+                warn!("Failed to start DHCP client on {}: {}", iface, e);
+                // Don't fail activation if DHCP fails - connection might have static fallback
+            } else {
+                debug!("DHCP client started on {}", iface);
+            }
+        } else if let Some(ipv4_config) = connection.get_setting_ip4_config() {
+            // Handle manual/static IP configuration
+            if ipv4_config.method == "manual" && !ipv4_config.addresses.is_empty() {
+                for addr in &ipv4_config.addresses {
+                    debug!("Setting static IP {} on {}", addr.address, iface);
+                    // Parse address/prefix
+                    let parts: Vec<&str> = addr.address.split('/').collect();
+                    if parts.len() == 2 {
+                        if let Ok(prefix) = parts[1].parse::<u8>() {
+                            if let Err(e) = self.interface_controller.set_ip(&iface, parts[0], prefix).await {
+                                warn!("Failed to set IP address on {}: {}", iface, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Create and return active connection
         CRActiveConnection::new(connection.clone(), device.cloned())
@@ -189,7 +251,24 @@ impl CRClient {
     /// Deactivates an active connection (equivalent to nm_client_deactivate_connection_async)
     pub async fn deactivate_connection(&self, active_connection: &CRActiveConnection) -> NetctlResult<()> {
         if let Some(device) = active_connection.get_device() {
-            self.interface_controller.down(device.get_iface()).await?;
+            let iface = device.get_iface();
+            info!("Deactivating connection on interface {}", iface);
+
+            // Stop DHCP client
+            if let Err(e) = self.dhcp_client.stop(iface).await {
+                warn!("Failed to stop DHCP client on {}: {}", iface, e);
+            }
+
+            // Disconnect WiFi if it's a WiFi connection
+            let connection = active_connection.get_connection();
+            if connection.is_type_wifi() {
+                if let Err(e) = self.wpa_supplicant.disconnect(iface).await {
+                    warn!("Failed to disconnect WiFi on {}: {}", iface, e);
+                }
+            }
+
+            // Bring interface down
+            self.interface_controller.down(iface).await?;
         }
         Ok(())
     }
@@ -254,6 +333,8 @@ impl Default for CRClient {
             device_controller: Arc::new(DeviceController::new()),
             interface_controller: Arc::new(InterfaceController::new()),
             wifi_controller: Arc::new(WifiController::new()),
+            dhcp_client: Arc::new(DhcpClientController::new()),
+            wpa_supplicant: Arc::new(WpaSupplicantController::new()),
             state: Arc::new(RwLock::new(CRState::ConnectedGlobal)),
             connectivity: Arc::new(RwLock::new(CRConnectivityState::Full)),
         }

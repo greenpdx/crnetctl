@@ -23,6 +23,11 @@ Async network management tool with NetworkManager D-Bus compatibility.
   - GitHub: https://github.com/greenpdx/CRdoraPub.git
   - Debian/Ubuntu: Not available in standard repos, build from source
 
+- **crdhcpc DHCP Client**: Comprehensive DHCP client written in Rust
+  - Location: `../crdhpcd/` (sibling directory)
+  - Provides automatic DHCP on link up for WiFi and ethernet
+  - See [DHCP Client Integration](docs/DHCP_CLIENT_INTEGRATION.md)
+
 ### Optional (for specific features)
 - **hostapd**: For access point mode
   - Debian/Ubuntu: `sudo apt install hostapd`
@@ -37,9 +42,11 @@ Async network management tool with NetworkManager D-Bus compatibility.
 
 - **Async Architecture**: Built on tokio for high performance
 - **Interface Management**: Control network interfaces (up/down, IP configuration)
-- **WiFi Support**: Scan networks, manage connections, regulatory domain
+- **WiFi Support**: Scan networks, manage connections, regulatory domain, WPA/WPA2 via wpa_supplicant
 - **Access Point Mode**: Create WiFi hotspots with hostapd
+- **DHCP Client**: Automatic DHCP via crdhcpc when links come up
 - **DHCP Server**: Configure dora DHCP server
+- **Link State Monitoring**: Automatically start DHCP when ethernet/WiFi links come up
 - **DNS Management**: Manage DNS configuration
 - **Routing Control**: Manage routing tables
 - **NetworkManager Compatible**: D-Bus interface for drop-in replacement
@@ -113,6 +120,30 @@ sudo mandb  # Update man database
 ```
 
 ## Usage
+
+### Connection Management (Recommended)
+
+netctl can manage connections through configuration files, automatically handling WiFi, DHCP, and static IP:
+
+```bash
+# List available connections
+netctl connection list
+
+# Activate a connection (connects WiFi + starts DHCP automatically)
+netctl connection up home-wifi
+
+# Show active connections
+netctl connection active
+
+# Deactivate connection
+netctl connection down wlan0
+```
+
+See [Connection Management Guide](docs/CONNECTION_MANAGEMENT.md) for complete documentation.
+
+### Direct Interface Control
+
+Alternatively, control interfaces directly:
 
 ### List network interfaces
 ```bash
