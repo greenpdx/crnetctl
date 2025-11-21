@@ -1,23 +1,33 @@
-# Netctl OpenVPN Configuration Example
+# OpenVPN Connection Configuration
+# This example shows how to configure an OpenVPN connection
 
 [connection]
-name = "MyVPN"
-uuid = "87654321-4321-4321-4321-cba987654321"
+name = "OpenVPN Corporate"
+uuid = "b2c3d4e5-f6a7-8901-bcde-f12345678902"
 type = "vpn"
-plugin = "openvpn"
 autoconnect = false
 
 [vpn]
-remote = "vpn.example.com"
+connection-type = "openvpn"
+
+# Option 1: Use existing .ovpn file (uncomment to use)
+# config_file = "/etc/openvpn/client/company.ovpn"
+
+# Option 2: Specify configuration directly
+[vpn.openvpn]
+remote = "vpn.company.com"
 port = 1194
 proto = "udp"
-connection-type = "tun"
+dev = "tun"
+
+# Certificates
 ca = "/etc/openvpn/ca.crt"
 cert = "/etc/openvpn/client.crt"
 key = "/etc/openvpn/client.key"
 
-[ipv4]
-method = "auto"
+# Security
+cipher = "AES-256-GCM"
+auth = "SHA256"
 
-[ipv6]
-method = "auto"
+[ipv4]
+method = "ignore"

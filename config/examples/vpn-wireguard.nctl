@@ -1,0 +1,92 @@
+# WireGuard VPN Connection Configuration
+# This example shows how to configure a WireGuard VPN connection
+
+[connection]
+name = "WireGuard VPN"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+type = "vpn"
+autoconnect = false
+interface-name = "wg0"  # Will be auto-generated if not specified
+
+[vpn]
+# VPN backend type - must be "wireguard" for WireGuard
+connection-type = "wireguard"
+
+# WireGuard Interface Configuration
+[vpn.wireguard]
+# Private key for this client (required)
+# Generate with: wg genkey
+private_key = "YourPrivateKeyHere="
+
+# IP address for the WireGuard interface (required)
+# Can be IPv4, IPv6, or both (comma-separated)
+address = "10.0.0.2/24"
+
+# Optional: Listen port for incoming connections
+# leave unspecified for automatic port selection
+# listen_port = 51820
+
+# Optional: DNS servers to use when connected
+dns = "10.0.0.1"
+
+# Optional: MTU for the interface
+# mtu = 1420
+
+# Optional: Routing table to use (default: auto)
+# table = "auto"
+
+# WireGuard Peer Configuration
+[vpn.wireguard.peer]
+# Public key of the peer/server (required)
+public_key = "ServerPublicKeyHere="
+
+# Allowed IPs - what traffic goes through the VPN (required)
+# Use "0.0.0.0/0" for all traffic
+allowed_ips = "0.0.0.0/0, ::/0"
+
+# Endpoint - server address and port (required for client)
+endpoint = "vpn.example.com:51820"
+
+# Optional: Send keepalive packets every N seconds
+# Helps maintain connection through NAT
+persistent_keepalive = 25
+
+# Optional: Pre-shared key for additional security
+# Generate with: wg genpsk
+# preshared_key = "YourPresharedKeyHere="
+
+# Multiple Peers Example (uncomment to use)
+# [[vpn.wireguard.peers]]
+# public_key = "Peer2PublicKeyHere="
+# allowed_ips = "10.0.1.0/24"
+# endpoint = "peer2.example.com:51820"
+# persistent_keepalive = 25
+
+# IP Configuration (optional - WireGuard handles its own IP)
+# This is for routes and DNS outside of WireGuard's config
+[ipv4]
+method = "ignore"  # WireGuard manages its own IP
+
+[ipv6]
+method = "ignore"
+
+# Example configurations:
+
+# 1. Road Warrior VPN (all traffic through VPN)
+#    - Set allowed_ips = "0.0.0.0/0, ::/0"
+#    - Set dns to VPN server's DNS
+#    - Client can access internet through VPN
+
+# 2. Site-to-Site VPN (specific networks only)
+#    - Set allowed_ips = "192.168.1.0/24" (remote network)
+#    - Split tunnel - only specific traffic goes through VPN
+
+# 3. Peer-to-Peer (multiple peers)
+#    - Use [[vpn.wireguard.peers]] for each peer
+#    - Each peer has their own allowed_ips
+
+# Security Notes:
+# - Keep private keys secure (chmod 600 this file!)
+# - Rotate keys periodically
+# - Use pre-shared keys for post-quantum security
+# - Validate endpoint hostnames/IPs

@@ -66,6 +66,18 @@ pub struct WifiSecuritySection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VpnSection {
+    #[serde(rename = "connection-type")]
+    pub connection_type: String,  // "wireguard", "openvpn", "ipsec"
+
+    // WireGuard configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wireguard: Option<WireGuardVpnSection>,
+
+    // OpenVPN configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openvpn: Option<OpenVpnSection>,
+
+    // Legacy fields (for backward compatibility)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,8 +92,67 @@ pub struct VpnSection {
     pub key: Option<String>,
     #[serde(rename = "config_file", skip_serializing_if = "Option::is_none")]
     pub config_file: Option<String>,
-    #[serde(rename = "connection-type", skip_serializing_if = "Option::is_none")]
-    pub connection_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WireGuardVpnSection {
+    pub private_key: String,
+    pub address: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listen_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mtu: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer: Option<WireGuardPeer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peers: Option<Vec<WireGuardPeer>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WireGuardPeer {
+    pub public_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_ips: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent_keepalive: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preshared_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenVpnSection {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proto: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dev: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ca: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cert: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls_auth: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cipher: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_user_pass: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verbose: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

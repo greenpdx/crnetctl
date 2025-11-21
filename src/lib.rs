@@ -55,6 +55,7 @@ pub use connection_config::{
     NetctlConnectionConfig, ConnectionConfigManager,
     ConnectionSection, WifiSection, WifiSecuritySection,
     IpConfigSection, EthernetSection, VpnSection,
+    WireGuardVpnSection, WireGuardPeer, OpenVpnSection,
 };
 
 #[cfg(feature = "dhcp-testing")]

@@ -9,8 +9,12 @@ use crate::connection_config::{ConnectionConfigManager, NetctlConnectionConfig};
 use crate::interface::InterfaceController;
 use crate::wpa_supplicant::WpaSupplicantController;
 use crate::dhcp_client::DhcpClientController;
+use crate::vpn::{VpnManager, wireguard, openvpn};
+use crate::plugin::ConnectionConfig;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::path::PathBuf;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
@@ -41,7 +45,9 @@ pub struct ConnectionManager {
     wpa_supplicant: Arc<WpaSupplicantController>,
     /// DHCP client controller
     dhcp_client: Arc<DhcpClientController>,
-    /// Active connections (interface -> connection)
+    /// VPN manager
+    vpn_manager: Arc<VpnManager>,
+    /// Active connections (interface/uuid -> connection)
     active_connections: Arc<RwLock<HashMap<String, ActiveConnection>>>,
 }
 
@@ -54,11 +60,17 @@ impl ConnectionManager {
             ConnectionConfigManager::default()
         };
 
+        // Initialize VPN manager with backends
+        let mut vpn_manager = VpnManager::new(PathBuf::from("/etc/netctl"));
+        vpn_manager.register_backend("wireguard", wireguard::create_backend);
+        vpn_manager.register_backend("openvpn", openvpn::create_backend);
+
         Self {
             config_manager,
             interface_controller: Arc::new(InterfaceController::new()),
             wpa_supplicant: Arc::new(WpaSupplicantController::new()),
             dhcp_client: Arc::new(DhcpClientController::new()),
+            vpn_manager: Arc::new(vpn_manager),
             active_connections: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -113,6 +125,11 @@ impl ConnectionManager {
         // Handle WiFi connection
         if config.connection.conn_type == "wifi" {
             self.activate_wifi(&config, &interface).await?;
+        }
+
+        // Handle VPN connection
+        if config.connection.conn_type == "vpn" {
+            return self.activate_vpn(name, &config).await;
         }
 
         // Handle IP configuration
