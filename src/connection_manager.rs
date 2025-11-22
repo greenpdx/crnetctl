@@ -10,8 +10,6 @@ use crate::interface::InterfaceController;
 use crate::wpa_supplicant::WpaSupplicantController;
 use crate::dhcp_client::DhcpClientController;
 use crate::vpn::{VpnManager, wireguard, openvpn};
-use crate::plugin::ConnectionConfig;
-use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::path::PathBuf;
@@ -255,6 +253,45 @@ impl ConnectionManager {
         Ok(dhcp_active)
     }
 
+    /// Activate VPN connection
+    async fn activate_vpn(&self, name: &str, config: &NetctlConnectionConfig) -> NetctlResult<()> {
+        let vpn = config.vpn.as_ref()
+            .ok_or_else(|| NetctlError::ConfigError(
+                "VPN connection must have [vpn] section".to_string()
+            ))?;
+
+        info!("Activating VPN connection '{}' (type: {})", name, vpn.connection_type);
+
+        // Convert to plugin ConnectionConfig format
+        let conn_config = config.to_plugin_config();
+
+        // Create VPN connection
+        let uuid = self.vpn_manager.create_connection(conn_config).await?;
+
+        // Connect VPN
+        let interface = self.vpn_manager.connect(&uuid).await?;
+
+        info!("VPN connected on interface: {}", interface);
+
+        // Store active connection
+        let active_conn = ActiveConnection {
+            name: name.to_string(),
+            uuid: config.connection.uuid.clone(),
+            interface: interface.clone(),
+            conn_type: "vpn".to_string(),
+            dhcp_active: false,
+            config: config.clone(),
+        };
+
+        self.active_connections.write().await.insert(
+            interface.clone(),
+            active_conn
+        );
+
+        info!("VPN connection '{}' activated successfully on {}", name, interface);
+        Ok(())
+    }
+
     /// Deactivate a connection on an interface
     pub async fn deactivate_connection(&self, interface: &str) -> NetctlResult<()> {
         info!("Deactivating connection on interface {}", interface);
@@ -282,6 +319,14 @@ impl ConnectionManager {
                 info!("Disconnecting WiFi on {}", interface);
                 if let Err(e) = self.wpa_supplicant.disconnect(interface).await {
                     warn!("Failed to disconnect WiFi on {}: {}", interface, e);
+                }
+            }
+
+            // Disconnect VPN if it's a VPN connection
+            if conn.conn_type == "vpn" {
+                info!("Disconnecting VPN on {}", interface);
+                if let Err(e) = self.vpn_manager.disconnect(&conn.uuid).await {
+                    warn!("Failed to disconnect VPN {}: {}", conn.uuid, e);
                 }
             }
 

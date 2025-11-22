@@ -251,9 +251,7 @@ impl NetctlConnectionConfig {
             if let Some(ref config_file) = vpn.config_file {
                 settings.insert("config_file".to_string(), serde_json::json!(config_file));
             }
-            if let Some(ref conn_type) = vpn.connection_type {
-                settings.insert("connection-type".to_string(), serde_json::json!(conn_type));
-            }
+            settings.insert("connection-type".to_string(), serde_json::json!(vpn.connection_type));
         }
 
         // Add IP settings
