@@ -1,4 +1,4 @@
-//! netctl - Network Control Library
+//! libnetctl - Network Control Library
 //!
 //! Async network management library providing interfaces for:
 //! - Network interface control

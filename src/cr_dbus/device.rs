@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, debug};
-use zbus::{dbus_interface, SignalContext, fdo};
+use zbus::{fdo, interface};
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::Value;
 
 /// CR Device D-Bus interface
@@ -57,7 +58,7 @@ impl CRDevice {
     }
 }
 
-#[dbus_interface(name = "org.crrouter.NetworkControl.Device")]
+#[interface(name = "org.crrouter.NetworkControl.Device")]
 impl CRDevice {
     /// Get device interface name
     async fn get_interface(&self) -> String {
@@ -153,17 +154,12 @@ impl CRDevice {
     // ============ D-Bus Signals ============
 
     /// StateChanged signal - emitted when device state changes
-    #[dbus_interface(signal)]
-    async fn state_changed(
-        ctxt: &SignalContext<'_>,
-        new_state: u32,
-        old_state: u32,
-        reason: u32,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn state_changed(signal_emitter: &SignalEmitter<'_>, new_state: u32, old_state: u32, reason: u32) -> zbus::Result<()>;
 
     /// IPConfigChanged signal - emitted when IP configuration changes
-    #[dbus_interface(signal)]
-    async fn ip_config_changed(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn ip_config_changed(signal_emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 impl Default for CRDevice {

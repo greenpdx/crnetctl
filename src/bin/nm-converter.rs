@@ -2,7 +2,7 @@
 //!
 //! Converts NetworkManager .nmconnection files to netctl TOML format
 
-use netctl::connection_config::*;
+use libnetctl::connection_config::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use clap::{Arg, Command as ClapCommand};

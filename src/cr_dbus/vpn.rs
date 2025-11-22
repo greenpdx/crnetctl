@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, debug};
-use zbus::{Connection, dbus_interface, SignalContext, fdo};
+use zbus::{Connection, fdo, interface};
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::Value;
 
 /// CR VPN D-Bus interface
@@ -64,7 +65,7 @@ impl CRVPN {
     }
 }
 
-#[dbus_interface(name = "org.crrouter.NetworkControl.VPN")]
+#[interface(name = "org.crrouter.NetworkControl.VPN")]
 impl CRVPN {
     /// Get list of VPN connections
     async fn get_connections(&self) -> Vec<String> {
@@ -175,40 +176,28 @@ impl CRVPN {
     // ============ D-Bus Signals ============
 
     /// ConnectionAdded signal - emitted when a VPN connection is added
-    #[dbus_interface(signal)]
-    async fn connection_added(ctxt: &SignalContext<'_>, name: &str, vpn_type: u32) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn connection_added(signal_emitter: &SignalEmitter<'_>, name: &str, vpn_type: u32) -> zbus::Result<()>;
 
     /// ConnectionRemoved signal - emitted when a VPN connection is removed
-    #[dbus_interface(signal)]
-    async fn connection_removed(ctxt: &SignalContext<'_>, name: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn connection_removed(signal_emitter: &SignalEmitter<'_>, name: &str) -> zbus::Result<()>;
 
     /// StateChanged signal - emitted when VPN state changes
-    #[dbus_interface(signal)]
-    async fn state_changed(
-        ctxt: &SignalContext<'_>,
-        name: &str,
-        state: u32,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn state_changed(signal_emitter: &SignalEmitter<'_>, name: &str, state: u32) -> zbus::Result<()>;
 
     /// Connected signal - emitted when VPN is connected
-    #[dbus_interface(signal)]
-    async fn connected(
-        ctxt: &SignalContext<'_>,
-        name: &str,
-        local_ip: &str,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn connected(signal_emitter: &SignalEmitter<'_>, name: &str, local_ip: &str) -> zbus::Result<()>;
 
     /// Disconnected signal - emitted when VPN is disconnected
-    #[dbus_interface(signal)]
-    async fn disconnected(ctxt: &SignalContext<'_>, name: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn disconnected(signal_emitter: &SignalEmitter<'_>, name: &str) -> zbus::Result<()>;
 
     /// Error signal - emitted when an error occurs
-    #[dbus_interface(signal)]
-    async fn error(
-        ctxt: &SignalContext<'_>,
-        name: &str,
-        error_message: &str,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn error(signal_emitter: &SignalEmitter<'_>, name: &str, error_message: &str) -> zbus::Result<()>;
 }
 
 impl Default for CRVPN {
@@ -235,7 +224,7 @@ pub mod signals {
             .interface::<_, CRVPN>(CR_VPN_PATH)
             .await
         {
-            CRVPN::connection_added(iface_ref.signal_context(), name, vpn_type as u32)
+            CRVPN::connection_added(iface_ref.signal_emitter(), name, vpn_type as u32)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit ConnectionAdded: {}", e)))?;
         }
@@ -249,7 +238,7 @@ pub mod signals {
             .interface::<_, CRVPN>(CR_VPN_PATH)
             .await
         {
-            CRVPN::connection_removed(iface_ref.signal_context(), name)
+            CRVPN::connection_removed(iface_ref.signal_emitter(), name)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit ConnectionRemoved: {}", e)))?;
         }
@@ -267,7 +256,7 @@ pub mod signals {
             .interface::<_, CRVPN>(CR_VPN_PATH)
             .await
         {
-            CRVPN::state_changed(iface_ref.signal_context(), name, state as u32)
+            CRVPN::state_changed(iface_ref.signal_emitter(), name, state as u32)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit StateChanged: {}", e)))?;
         }
@@ -285,7 +274,7 @@ pub mod signals {
             .interface::<_, CRVPN>(CR_VPN_PATH)
             .await
         {
-            CRVPN::connected(iface_ref.signal_context(), name, local_ip)
+            CRVPN::connected(iface_ref.signal_emitter(), name, local_ip)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit Connected: {}", e)))?;
         }
@@ -299,7 +288,7 @@ pub mod signals {
             .interface::<_, CRVPN>(CR_VPN_PATH)
             .await
         {
-            CRVPN::disconnected(iface_ref.signal_context(), name)
+            CRVPN::disconnected(iface_ref.signal_emitter(), name)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit Disconnected: {}", e)))?;
         }
@@ -317,7 +306,7 @@ pub mod signals {
             .interface::<_, CRVPN>(CR_VPN_PATH)
             .await
         {
-            CRVPN::error(iface_ref.signal_context(), name, error_message)
+            CRVPN::error(iface_ref.signal_emitter(), name, error_message)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit Error: {}", e)))?;
         }

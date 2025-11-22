@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, debug};
-use zbus::{Connection, dbus_interface, SignalContext, fdo};
+use zbus::{Connection, fdo, interface};
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::Value;
 
 /// CR WiFi D-Bus interface
@@ -68,7 +69,7 @@ impl CRWiFi {
     }
 }
 
-#[dbus_interface(name = "org.crrouter.NetworkControl.WiFi")]
+#[interface(name = "org.crrouter.NetworkControl.WiFi")]
 impl CRWiFi {
     /// Get WiFi enabled state
     async fn get_enabled(&self) -> bool {
@@ -174,32 +175,24 @@ impl CRWiFi {
     // ============ D-Bus Signals ============
 
     /// ScanCompleted signal - emitted when a scan completes
-    #[dbus_interface(signal)]
-    async fn scan_completed(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn scan_completed(signal_emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 
     /// AccessPointAdded signal - emitted when a new AP is detected
-    #[dbus_interface(signal)]
-    async fn access_point_added(
-        ctxt: &SignalContext<'_>,
-        ssid: &str,
-        bssid: &str,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn access_point_added(signal_emitter: &SignalEmitter<'_>, ssid: &str, bssid: &str) -> zbus::Result<()>;
 
     /// AccessPointRemoved signal - emitted when an AP is no longer visible
-    #[dbus_interface(signal)]
-    async fn access_point_removed(
-        ctxt: &SignalContext<'_>,
-        ssid: &str,
-        bssid: &str,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn access_point_removed(signal_emitter: &SignalEmitter<'_>, ssid: &str, bssid: &str) -> zbus::Result<()>;
 
     /// Connected signal - emitted when connected to a network
-    #[dbus_interface(signal)]
-    async fn connected(ctxt: &SignalContext<'_>, ssid: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn connected(signal_emitter: &SignalEmitter<'_>, ssid: &str) -> zbus::Result<()>;
 
     /// Disconnected signal - emitted when disconnected from a network
-    #[dbus_interface(signal)]
-    async fn disconnected(ctxt: &SignalContext<'_>) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn disconnected(signal_emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 impl Default for CRWiFi {
@@ -219,7 +212,7 @@ pub mod signals {
             .interface::<_, CRWiFi>(CR_WIFI_PATH)
             .await
         {
-            CRWiFi::scan_completed(iface_ref.signal_context())
+            CRWiFi::scan_completed(iface_ref.signal_emitter())
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit ScanCompleted: {}", e)))?;
         }
@@ -237,7 +230,7 @@ pub mod signals {
             .interface::<_, CRWiFi>(CR_WIFI_PATH)
             .await
         {
-            CRWiFi::access_point_added(iface_ref.signal_context(), ssid, bssid)
+            CRWiFi::access_point_added(iface_ref.signal_emitter(), ssid, bssid)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit AccessPointAdded: {}", e)))?;
         }
@@ -255,7 +248,7 @@ pub mod signals {
             .interface::<_, CRWiFi>(CR_WIFI_PATH)
             .await
         {
-            CRWiFi::access_point_removed(iface_ref.signal_context(), ssid, bssid)
+            CRWiFi::access_point_removed(iface_ref.signal_emitter(), ssid, bssid)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit AccessPointRemoved: {}", e)))?;
         }
@@ -269,7 +262,7 @@ pub mod signals {
             .interface::<_, CRWiFi>(CR_WIFI_PATH)
             .await
         {
-            CRWiFi::connected(iface_ref.signal_context(), ssid)
+            CRWiFi::connected(iface_ref.signal_emitter(), ssid)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit Connected: {}", e)))?;
         }
@@ -283,7 +276,7 @@ pub mod signals {
             .interface::<_, CRWiFi>(CR_WIFI_PATH)
             .await
         {
-            CRWiFi::disconnected(iface_ref.signal_context())
+            CRWiFi::disconnected(iface_ref.signal_emitter())
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit Disconnected: {}", e)))?;
         }

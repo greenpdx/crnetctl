@@ -8,7 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn, debug};
-use zbus::{Connection, dbus_interface, SignalContext, fdo};
+use zbus::{Connection, fdo, interface};
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::Value;
 
 /// CR Network Control D-Bus interface
@@ -107,7 +108,7 @@ impl CRNetworkControl {
     }
 }
 
-#[dbus_interface(name = "org.crrouter.NetworkControl")]
+#[interface(name = "org.crrouter.NetworkControl")]
 impl CRNetworkControl {
     /// Get API version
     async fn get_version(&self) -> String {
@@ -239,35 +240,28 @@ impl CRNetworkControl {
     // ============ D-Bus Signals ============
 
     /// StateChanged signal - emitted when global network state changes
-    #[dbus_interface(signal)]
-    async fn state_changed(ctxt: &SignalContext<'_>, state: u32) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn state_changed(signal_emitter: &SignalEmitter<'_>, state: u32) -> zbus::Result<()>;
 
     /// DeviceAdded signal - emitted when a device is added
-    #[dbus_interface(signal)]
-    async fn device_added(ctxt: &SignalContext<'_>, device_path: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn device_added(signal_emitter: &SignalEmitter<'_>, device_path: &str) -> zbus::Result<()>;
 
     /// DeviceRemoved signal - emitted when a device is removed
-    #[dbus_interface(signal)]
-    async fn device_removed(ctxt: &SignalContext<'_>, device_path: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn device_removed(signal_emitter: &SignalEmitter<'_>, device_path: &str) -> zbus::Result<()>;
 
     /// DeviceStateChanged signal - emitted when a device state changes
-    #[dbus_interface(signal)]
-    async fn device_state_changed(
-        ctxt: &SignalContext<'_>,
-        device_path: &str,
-        state: u32,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn device_state_changed(signal_emitter: &SignalEmitter<'_>, device_path: &str, state: u32) -> zbus::Result<()>;
 
     /// ConnectivityChanged signal - emitted when connectivity changes
-    #[dbus_interface(signal)]
-    async fn connectivity_changed(ctxt: &SignalContext<'_>, connectivity: u32) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn connectivity_changed(signal_emitter: &SignalEmitter<'_>, connectivity: u32) -> zbus::Result<()>;
 
     /// PropertiesChanged signal - emitted when properties change
-    #[dbus_interface(signal)]
-    async fn properties_changed(
-        ctxt: &SignalContext<'_>,
-        properties: HashMap<String, Value<'_>>,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn properties_changed(signal_emitter: &SignalEmitter<'_>, properties: HashMap<String, Value<'_>>) -> zbus::Result<()>;
 }
 
 impl Default for CRNetworkControl {
@@ -290,7 +284,7 @@ pub mod signals {
             .interface::<_, CRNetworkControl>(CR_DBUS_PATH)
             .await
         {
-            CRNetworkControl::state_changed(iface_ref.signal_context(), state as u32)
+            CRNetworkControl::state_changed(iface_ref.signal_emitter(), state as u32)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit StateChanged: {}", e)))?;
         }
@@ -307,7 +301,7 @@ pub mod signals {
             .interface::<_, CRNetworkControl>(CR_DBUS_PATH)
             .await
         {
-            CRNetworkControl::device_added(iface_ref.signal_context(), device_path)
+            CRNetworkControl::device_added(iface_ref.signal_emitter(), device_path)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit DeviceAdded: {}", e)))?;
         }
@@ -324,7 +318,7 @@ pub mod signals {
             .interface::<_, CRNetworkControl>(CR_DBUS_PATH)
             .await
         {
-            CRNetworkControl::device_removed(iface_ref.signal_context(), device_path)
+            CRNetworkControl::device_removed(iface_ref.signal_emitter(), device_path)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit DeviceRemoved: {}", e)))?;
         }
@@ -343,7 +337,7 @@ pub mod signals {
             .await
         {
             CRNetworkControl::device_state_changed(
-                iface_ref.signal_context(),
+                iface_ref.signal_emitter(),
                 device_path,
                 state as u32,
             )
@@ -363,7 +357,7 @@ pub mod signals {
             .interface::<_, CRNetworkControl>(CR_DBUS_PATH)
             .await
         {
-            CRNetworkControl::connectivity_changed(iface_ref.signal_context(), connectivity as u32)
+            CRNetworkControl::connectivity_changed(iface_ref.signal_emitter(), connectivity as u32)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit ConnectivityChanged: {}", e)))?;
         }
@@ -380,7 +374,7 @@ pub mod signals {
             .interface::<_, CRNetworkControl>(CR_DBUS_PATH)
             .await
         {
-            CRNetworkControl::properties_changed(iface_ref.signal_context(), properties)
+            CRNetworkControl::properties_changed(iface_ref.signal_emitter(), properties)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit PropertiesChanged: {}", e)))?;
         }

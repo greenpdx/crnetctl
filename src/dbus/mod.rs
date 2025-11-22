@@ -4,11 +4,10 @@
 //! allowing netctl to be used as a drop-in replacement for NetworkManager
 //! in applications that depend on the NetworkManager D-Bus API.
 
-#![allow(deprecated)]
-
 use crate::error::{NetctlError, NetctlResult};
 use crate::plugin::traits::PluginState;
-use zbus::{Connection, dbus_interface, SignalContext, fdo};
+use zbus::{Connection, fdo, interface};
+use zbus::object_server::SignalEmitter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -149,7 +148,7 @@ pub mod signals {
             .interface::<_, NetworkManagerDBus>(NM_DBUS_PATH)
             .await
         {
-            NetworkManagerDBus::state_changed(iface_ref.signal_context(), state)
+            NetworkManagerDBus::state_changed(iface_ref.signal_emitter(), state)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit StateChanged signal: {}", e)))?;
         }
@@ -166,7 +165,7 @@ pub mod signals {
             .interface::<_, NetworkManagerDBus>(NM_DBUS_PATH)
             .await
         {
-            NetworkManagerDBus::device_added(iface_ref.signal_context(), device_path)
+            NetworkManagerDBus::device_added(iface_ref.signal_emitter(), device_path)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit DeviceAdded signal: {}", e)))?;
         }
@@ -183,7 +182,7 @@ pub mod signals {
             .interface::<_, NetworkManagerDBus>(NM_DBUS_PATH)
             .await
         {
-            NetworkManagerDBus::device_removed(iface_ref.signal_context(), device_path)
+            NetworkManagerDBus::device_removed(iface_ref.signal_emitter(), device_path)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit DeviceRemoved signal: {}", e)))?;
         }
@@ -200,7 +199,7 @@ pub mod signals {
             .interface::<_, NetworkManagerDBus>(NM_DBUS_PATH)
             .await
         {
-            NetworkManagerDBus::properties_changed(iface_ref.signal_context(), properties)
+            NetworkManagerDBus::properties_changed(iface_ref.signal_emitter(), properties)
                 .await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to emit PropertiesChanged signal: {}", e)))?;
         }
@@ -208,7 +207,7 @@ pub mod signals {
     }
 }
 
-#[dbus_interface(name = "org.freedesktop.NetworkManager")]
+#[interface(name = "org.freedesktop.NetworkManager")]
 impl NetworkManagerDBus {
     /// Get all network devices
     async fn get_devices(&self) -> Vec<String> {
@@ -282,23 +281,20 @@ impl NetworkManagerDBus {
     }
 
     /// StateChanged signal - emitted when global networking state changes
-    #[dbus_interface(signal)]
-    async fn state_changed(ctxt: &SignalContext<'_>, state: u32) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn state_changed(signal_emitter: &SignalEmitter<'_>, state: u32) -> zbus::Result<()>;
 
     /// DeviceAdded signal - emitted when a device is added
-    #[dbus_interface(signal)]
-    async fn device_added(ctxt: &SignalContext<'_>, device_path: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn device_added(signal_emitter: &SignalEmitter<'_>, device_path: &str) -> zbus::Result<()>;
 
     /// DeviceRemoved signal - emitted when a device is removed
-    #[dbus_interface(signal)]
-    async fn device_removed(ctxt: &SignalContext<'_>, device_path: &str) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn device_removed(signal_emitter: &SignalEmitter<'_>, device_path: &str) -> zbus::Result<()>;
 
     /// PropertiesChanged signal - emitted when properties change
-    #[dbus_interface(signal)]
-    async fn properties_changed(
-        ctxt: &SignalContext<'_>,
-        properties: HashMap<String, zbus::zvariant::Value<'_>>,
-    ) -> zbus::Result<()>;
+    #[zbus(signal)]
+    async fn properties_changed(signal_emitter: &SignalEmitter<'_>, properties: HashMap<String, zbus::zvariant::Value<'_>>) -> zbus::Result<()>;
 }
 
 /// Start the NetworkManager D-Bus service

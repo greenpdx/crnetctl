@@ -11,12 +11,8 @@ keywords = ["network", "wifi", "networkmanager", "dbus"]
 categories = ["command-line-utilities", "network-programming"]
 
 [lib]
-name = "netctl"
+name = "libnetctl"
 path = "src/lib.rs"
-
-[[bin]]
-name = "netctl"
-path = "src/bin/netctl.rs"
 
 [[bin]]
 name = "nm-converter"
@@ -37,45 +33,45 @@ async-trait = "0.1"
 futures = "0.3"  # Required for TryStreamExt used by rtnetlink
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.8"
+toml = "0.9"
 uuid = { version = "1.0", features = ["v4"] }
 chrono = "0.4"
 
 # D-Bus for NetworkManager compatibility
-zbus = "4"
-zvariant = "4"
+zbus = "5"
+zvariant = "5"
 
 # Network monitoring
-rtnetlink = "0.14"
-netlink-packet-route = "0.19"
+rtnetlink = "0.18"
+netlink-packet-route = "0.25"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # Optional: Dynamic plugin loading
-libloading = { version = "0.8", optional = true }
+libloading = { version = "0.9", optional = true }
 
 # Optional: DHCP testing (not fully implemented)
 dhcpm = { git = "https://github.com/leshow/dhcpm", default-features = false, optional = true }
 
 # Optional: Tor via Arti
-arti-client = { version = "0.23", optional = true }
-tor-rtcompat = { version = "0.23", optional = true }
+arti-client = { version = "0.36", optional = true }
+tor-rtcompat = { version = "0.36", optional = true }
 
 [dev-dependencies]
 # Testing
 tokio-test = "0.4"
-mockall = "0.12"
+mockall = "0.13"
 tempfile = "3"
 serial_test = "3"
 

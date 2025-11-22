@@ -279,7 +279,6 @@ mod tests {
         let config = InterfaceConfig {
             interface: "eth0".to_string(),
             auto_dhcp: true,
-            connection: None,
         };
         assert_eq!(config.interface, "eth0");
         assert!(config.auto_dhcp);
