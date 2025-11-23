@@ -4,8 +4,41 @@ This directory contains systemd service unit files for managing netctl at boot t
 
 ## Service Files
 
+### netctld.service
+**NEW:** Dedicated Network Control Daemon that provides the CR D-Bus interface (`org.crrouter.NetworkControl`) for network management.
+
+**Installation:**
+```bash
+sudo cp systemd/netctld.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable netctld.service
+sudo systemctl start netctld.service
+```
+
+**Features:**
+- Provides CR D-Bus interface at `org.crrouter.NetworkControl`
+- Manages network, WiFi, VPN, DHCP, DNS, and routing
+- Automatic restart on failure
+- Security hardening with capabilities
+- Works with `nccli --use-dbus` for D-Bus communication
+
+**Usage:**
+```bash
+# Start the daemon
+sudo systemctl start netctld.service
+
+# Use nccli with D-Bus
+nccli --use-dbus device wifi list
+
+# Check daemon status
+sudo systemctl status netctld.service
+
+# View logs
+sudo journalctl -u netctld.service -f
+```
+
 ### netctl.service
-Main netctl daemon service that provides D-Bus interface and manages network connections.
+Main netctl daemon service that provides NetworkManager D-Bus compatibility interface and manages network connections.
 
 **Installation:**
 ```bash

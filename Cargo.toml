@@ -116,9 +116,11 @@ priority = "optional"
 assets = [
     ["target/release/netctl", "usr/bin/", "755"],
     ["target/release/nccli", "usr/bin/", "755"],
+    ["target/release/netctld", "usr/bin/", "755"],
     ["target/release/nm-converter", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/netctl/", "644"],
     ["systemd/netctl.service", "lib/systemd/system/", "644"],
+    ["systemd/netctld.service", "lib/systemd/system/", "644"],
     ["systemd/netctl@.service", "lib/systemd/system/", "644"],
     ["systemd/netctl-auto@.service", "lib/systemd/system/", "644"],
     ["systemd/README.md", "usr/share/doc/netctl/systemd/", "644"],
