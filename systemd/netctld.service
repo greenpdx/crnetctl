@@ -7,8 +7,7 @@ Wants=network.target
 ConditionPathExists=/usr/bin/netctld
 
 [Service]
-Type=dbus
-BusName=org.crrouter.NetworkControl
+Type=simple
 ExecStart=/usr/bin/netctld --foreground
 Restart=on-failure
 RestartSec=10

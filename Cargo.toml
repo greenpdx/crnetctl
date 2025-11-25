@@ -138,6 +138,8 @@ assets = [
     ["systemd/netctl@.service", "lib/systemd/system/", "644"],
     ["systemd/netctl-auto@.service", "lib/systemd/system/", "644"],
     ["systemd/README.md", "usr/share/doc/netctl/systemd/", "644"],
+    ["dbus/org.crrouter.NetworkControl.conf", "etc/dbus-1/system.d/", "644"],
+    ["dbus/org.crrouter.NetworkControl.service", "usr/share/dbus-1/system-services/", "644"],
     ["config/examples/wifi-wpa.nctl", "usr/share/doc/netctl/examples/", "644"],
     ["config/examples/wifi-dhcp.nctl", "usr/share/doc/netctl/examples/", "644"],
     ["config/examples/ethernet-dhcp.nctl", "usr/share/doc/netctl/examples/", "644"],
