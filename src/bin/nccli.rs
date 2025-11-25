@@ -16,6 +16,163 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
+// ============================================================================
+// PRIVILEGED OPERATIONS SECURITY
+// ============================================================================
+
+/// List of all commands that modify system network configuration.
+/// These operations require either:
+/// 1. Running as root (UID 0), or
+/// 2. Using --allow-root-ops flag (which itself requires root)
+///
+/// Categories of privileged operations:
+/// - Interface management: up/down, IP configuration, MAC changes
+/// - Connection management: create, modify, delete, activate
+/// - Service control: AP, DHCP, VPN start/stop
+/// - System settings: hostname, routing, DNS
+/// - Radio control: WiFi on/off
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivilegedOp {
+    // General
+    SetHostname,
+
+    // Networking
+    NetworkingOn,
+    NetworkingOff,
+
+    // Radio
+    RadioWifiOn,
+    RadioWifiOff,
+
+    // Connection management
+    ConnectionUp,
+    ConnectionDown,
+    ConnectionAdd,
+    ConnectionModify,
+    ConnectionDelete,
+    ConnectionReload,
+    ConnectionLoad,
+    ConnectionClone,
+    ConnectionEdit,
+
+    // Device management
+    DeviceConnect,
+    DeviceDisconnect,
+    DeviceSet,
+    DeviceReapply,
+    DeviceModify,
+    DeviceDelete,
+    DeviceWifiConnect,
+    DeviceWifiHotspot,
+    DeviceWifiRadio,
+
+    // VPN
+    VpnConnect,
+    VpnDisconnect,
+    VpnCreate,
+    VpnImport,
+    VpnDelete,
+
+    // Access Point
+    ApStart,
+    ApStop,
+    ApRestart,
+
+    // DHCP
+    DhcpStart,
+    DhcpStop,
+
+    // DNS
+    DnsSet,
+    DnsFlush,
+
+    // Routing
+    RouteAddDefault,
+    RouteAdd,
+    RouteDelete,
+}
+
+impl PrivilegedOp {
+    /// Get a human-readable description of the operation
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::SetHostname => "set system hostname",
+            Self::NetworkingOn => "enable networking",
+            Self::NetworkingOff => "disable networking",
+            Self::RadioWifiOn => "enable WiFi radio",
+            Self::RadioWifiOff => "disable WiFi radio",
+            Self::ConnectionUp => "activate connection",
+            Self::ConnectionDown => "deactivate connection",
+            Self::ConnectionAdd => "create connection",
+            Self::ConnectionModify => "modify connection",
+            Self::ConnectionDelete => "delete connection",
+            Self::ConnectionReload => "reload connections",
+            Self::ConnectionLoad => "load connection file",
+            Self::ConnectionClone => "clone connection",
+            Self::ConnectionEdit => "edit connection",
+            Self::DeviceConnect => "connect device",
+            Self::DeviceDisconnect => "disconnect device",
+            Self::DeviceSet => "set device properties",
+            Self::DeviceReapply => "reapply device configuration",
+            Self::DeviceModify => "modify device",
+            Self::DeviceDelete => "delete device",
+            Self::DeviceWifiConnect => "connect to WiFi network",
+            Self::DeviceWifiHotspot => "create WiFi hotspot",
+            Self::DeviceWifiRadio => "control WiFi radio",
+            Self::VpnConnect => "connect VPN",
+            Self::VpnDisconnect => "disconnect VPN",
+            Self::VpnCreate => "create VPN connection",
+            Self::VpnImport => "import VPN configuration",
+            Self::VpnDelete => "delete VPN connection",
+            Self::ApStart => "start access point",
+            Self::ApStop => "stop access point",
+            Self::ApRestart => "restart access point",
+            Self::DhcpStart => "start DHCP server",
+            Self::DhcpStop => "stop DHCP server",
+            Self::DnsSet => "set DNS configuration",
+            Self::DnsFlush => "flush DNS cache",
+            Self::RouteAddDefault => "add default route",
+            Self::RouteAdd => "add route",
+            Self::RouteDelete => "delete route",
+        }
+    }
+}
+
+/// Check if the current process is running as root
+fn is_root() -> bool {
+    #[cfg(unix)]
+    {
+        unsafe { libc::getuid() == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+/// Check if a privileged operation is allowed
+/// Returns Ok(()) if allowed, Err with message if not
+fn check_privileged_op(op: PrivilegedOp, allow_root_ops: bool) -> NetctlResult<()> {
+    if is_root() {
+        return Ok(());
+    }
+
+    if allow_root_ops {
+        // --allow-root-ops was specified but we're not root
+        // This flag itself requires root to use
+        return Err(NetctlError::PermissionDenied(
+            "--allow-root-ops flag requires root privileges".to_string()
+        ));
+    }
+
+    Err(NetctlError::PermissionDenied(format!(
+        "Operation '{}' requires root privileges.\n\
+         Run with sudo or as root user.\n\
+         Alternatively, configure polkit rules for non-root access.",
+        op.description()
+    )))
+}
+
 #[derive(Parser)]
 #[command(name = "nccli")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
@@ -63,6 +220,13 @@ struct Cli {
     /// Use D-Bus to communicate with netctld daemon (default: auto-detect)
     #[arg(long)]
     use_dbus: bool,
+
+    /// Allow privileged operations (requires root).
+    /// This flag enables system-modifying commands like connection management,
+    /// interface control, and service management. For security, this flag
+    /// can only be used when running as root (UID 0).
+    #[arg(long, hide = true)]
+    allow_root_ops: bool,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -701,6 +865,136 @@ enum DebugCommands {
     },
 }
 
+/// Determine if a command requires root privileges
+/// Returns Some(PrivilegedOp) if privileged, None if read-only
+fn get_required_privilege(command: &Commands) -> Option<PrivilegedOp> {
+    match command {
+        // General commands
+        Commands::General(GeneralCommands::Status) => None,
+        Commands::General(GeneralCommands::Permissions) => None,
+        Commands::General(GeneralCommands::Logging { level, domains }) => {
+            // Setting logging requires privilege, getting does not
+            if level.is_some() || domains.is_some() {
+                Some(PrivilegedOp::SetHostname) // reuse for logging
+            } else {
+                None
+            }
+        }
+        Commands::General(GeneralCommands::Hostname { hostname }) => {
+            // Setting hostname requires privilege, getting does not
+            if hostname.is_some() {
+                Some(PrivilegedOp::SetHostname)
+            } else {
+                None
+            }
+        }
+
+        // Networking commands - all modify state
+        Commands::Networking(NetworkingCommands::On) => Some(PrivilegedOp::NetworkingOn),
+        Commands::Networking(NetworkingCommands::Off) => Some(PrivilegedOp::NetworkingOff),
+        Commands::Networking(NetworkingCommands::Connectivity { .. }) => None,
+
+        // Radio commands
+        Commands::Radio(RadioCommands::All) => None,
+        Commands::Radio(RadioCommands::Wifi { state }) => {
+            match state.as_deref() {
+                Some("on") => Some(PrivilegedOp::RadioWifiOn),
+                Some("off") => Some(PrivilegedOp::RadioWifiOff),
+                _ => None, // just getting status
+            }
+        }
+        Commands::Radio(RadioCommands::Wwan { state }) => {
+            if state.is_some() {
+                Some(PrivilegedOp::RadioWifiOn) // reuse
+            } else {
+                None
+            }
+        }
+
+        // Connection commands
+        Commands::Connection(ConnectionCommands::Show { .. }) => None,
+        Commands::Connection(ConnectionCommands::Up { .. }) => Some(PrivilegedOp::ConnectionUp),
+        Commands::Connection(ConnectionCommands::Down { .. }) => Some(PrivilegedOp::ConnectionDown),
+        Commands::Connection(ConnectionCommands::Add { .. }) => Some(PrivilegedOp::ConnectionAdd),
+        Commands::Connection(ConnectionCommands::Modify { .. }) => Some(PrivilegedOp::ConnectionModify),
+        Commands::Connection(ConnectionCommands::Edit { .. }) => Some(PrivilegedOp::ConnectionEdit),
+        Commands::Connection(ConnectionCommands::Delete { .. }) => Some(PrivilegedOp::ConnectionDelete),
+        Commands::Connection(ConnectionCommands::Reload) => Some(PrivilegedOp::ConnectionReload),
+        Commands::Connection(ConnectionCommands::Load { .. }) => Some(PrivilegedOp::ConnectionLoad),
+        Commands::Connection(ConnectionCommands::Import { .. }) => Some(PrivilegedOp::ConnectionLoad),
+        Commands::Connection(ConnectionCommands::Export { .. }) => None, // read-only
+        Commands::Connection(ConnectionCommands::Clone { .. }) => Some(PrivilegedOp::ConnectionClone),
+
+        // Device commands
+        Commands::Device(DeviceCommands::Status { .. }) => None,
+        Commands::Device(DeviceCommands::Show { .. }) => None,
+        Commands::Device(DeviceCommands::Set { .. }) => Some(PrivilegedOp::DeviceSet),
+        Commands::Device(DeviceCommands::Connect { .. }) => Some(PrivilegedOp::DeviceConnect),
+        Commands::Device(DeviceCommands::Reapply { .. }) => Some(PrivilegedOp::DeviceReapply),
+        Commands::Device(DeviceCommands::Modify { .. }) => Some(PrivilegedOp::DeviceModify),
+        Commands::Device(DeviceCommands::Disconnect { .. }) => Some(PrivilegedOp::DeviceDisconnect),
+        Commands::Device(DeviceCommands::Delete { .. }) => Some(PrivilegedOp::DeviceDelete),
+        Commands::Device(DeviceCommands::Monitor { .. }) => None,
+        Commands::Device(DeviceCommands::Wifi(wifi_cmd)) => {
+            match wifi_cmd {
+                WifiDeviceCommands::List { .. } => None,
+                WifiDeviceCommands::Connect { .. } => Some(PrivilegedOp::DeviceWifiConnect),
+                WifiDeviceCommands::Hotspot { .. } => Some(PrivilegedOp::DeviceWifiHotspot),
+                WifiDeviceCommands::Radio { .. } => Some(PrivilegedOp::DeviceWifiRadio),
+            }
+        }
+        Commands::Device(DeviceCommands::Lldp { .. }) => None,
+
+        // Agent commands - run as user
+        Commands::Agent(_) => None,
+
+        // Monitor - read-only
+        Commands::Monitor => None,
+
+        // VPN commands
+        Commands::Vpn(VpnCommands::List) => None,
+        Commands::Vpn(VpnCommands::Show { .. }) => None,
+        Commands::Vpn(VpnCommands::Status { .. }) => None,
+        Commands::Vpn(VpnCommands::Stats { .. }) => None,
+        Commands::Vpn(VpnCommands::Backends) => None,
+        Commands::Vpn(VpnCommands::Connect { .. }) => Some(PrivilegedOp::VpnConnect),
+        Commands::Vpn(VpnCommands::Disconnect { .. }) => Some(PrivilegedOp::VpnDisconnect),
+        Commands::Vpn(VpnCommands::Import { .. }) => Some(PrivilegedOp::VpnImport),
+        Commands::Vpn(VpnCommands::Export { .. }) => None, // read-only
+        Commands::Vpn(VpnCommands::Create { .. }) => Some(PrivilegedOp::VpnCreate),
+        Commands::Vpn(VpnCommands::Delete { .. }) => Some(PrivilegedOp::VpnDelete),
+
+        // AP commands
+        Commands::Ap(ApCommands::Start { .. }) => Some(PrivilegedOp::ApStart),
+        Commands::Ap(ApCommands::Stop) => Some(PrivilegedOp::ApStop),
+        Commands::Ap(ApCommands::Status) => None,
+        Commands::Ap(ApCommands::Restart) => Some(PrivilegedOp::ApRestart),
+
+        // DHCP commands
+        Commands::Dhcp(DhcpCommands::Start { .. }) => Some(PrivilegedOp::DhcpStart),
+        Commands::Dhcp(DhcpCommands::Stop) => Some(PrivilegedOp::DhcpStop),
+        Commands::Dhcp(DhcpCommands::Status) => None,
+        Commands::Dhcp(DhcpCommands::Leases) => None,
+
+        // DNS commands
+        Commands::Dns(DnsCommands::Start { .. }) => Some(PrivilegedOp::DhcpStart), // reuse
+        Commands::Dns(DnsCommands::Stop) => Some(PrivilegedOp::DhcpStop), // reuse
+        Commands::Dns(DnsCommands::Status) => None,
+        Commands::Dns(DnsCommands::Flush) => Some(PrivilegedOp::DnsFlush),
+
+        // Route commands
+        Commands::Route(RouteCommands::Show) => None,
+        Commands::Route(RouteCommands::AddDefault { .. }) => Some(PrivilegedOp::RouteAddDefault),
+        Commands::Route(RouteCommands::DelDefault) => Some(PrivilegedOp::RouteDelete),
+
+        // Debug commands - read-only
+        Commands::Debug(_) => None,
+
+        // Daemon - requires root to start
+        Commands::Daemon { .. } => Some(PrivilegedOp::ApStart), // reuse - daemon needs root
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let mut cli = Cli::parse();
@@ -711,6 +1005,17 @@ async fn main() {
     }
 
     let command = cli.command.as_ref().unwrap();
+
+    // =========================================================================
+    // SINGLE PRIVILEGE CHECK POINT
+    // =========================================================================
+    // Check if command requires root privileges before executing
+    if let Some(required_op) = get_required_privilege(command) {
+        if let Err(e) = check_privileged_op(required_op, cli.allow_root_ops) {
+            eprintln!("Error: {}", e);
+            process::exit(1);
+        }
+    }
 
     let result = match command {
         Commands::General(cmd) => handle_general(cmd, &cli).await,
