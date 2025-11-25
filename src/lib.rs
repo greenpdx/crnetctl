@@ -21,6 +21,7 @@ pub mod hostapd;
 pub mod dhcp;
 pub mod dhcp_client;
 pub mod link_monitor;
+pub mod privilege_token;
 
 #[cfg(feature = "dhcp-testing")]
 pub mod dhcpm;
@@ -70,6 +71,7 @@ pub use device::{
     DeviceController, Device, DeviceType, DeviceState, DeviceCapabilities,
     DeviceStats, DeviceConfig,
 };
+pub use privilege_token::{PrivilegeToken, revoke_token, has_valid_token};
 pub use plugin::{
     NetworkPlugin, PluginCapability, PluginMetadata, PluginState,
     ConnectionConfig, ConnectionStats, PluginManager,

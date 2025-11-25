@@ -152,23 +152,21 @@ fn is_root() -> bool {
 
 /// Check if a privileged operation is allowed
 /// Returns Ok(()) if allowed, Err with message if not
-fn check_privileged_op(op: PrivilegedOp, allow_root_ops: bool) -> NetctlResult<()> {
+fn check_privileged_op(op: PrivilegedOp) -> NetctlResult<()> {
+    // Always allow if running as root
     if is_root() {
         return Ok(());
     }
 
-    if allow_root_ops {
-        // --allow-root-ops was specified but we're not root
-        // This flag itself requires root to use
-        return Err(NetctlError::PermissionDenied(
-            "--allow-root-ops flag requires root privileges".to_string()
-        ));
+    // Check for valid privilege token
+    if has_valid_token() {
+        return Ok(());
     }
 
     Err(NetctlError::PermissionDenied(format!(
         "Operation '{}' requires root privileges.\n\
-         Run with sudo or as root user.\n\
-         Alternatively, configure polkit rules for non-root access.",
+         Run with sudo, or ask root to grant temporary access:\n\
+         sudo nccli --allow-root-ops <MINUTES>",
         op.description()
     )))
 }
@@ -221,12 +219,27 @@ struct Cli {
     #[arg(long)]
     use_dbus: bool,
 
-    /// Allow privileged operations (requires root).
-    /// This flag enables system-modifying commands like connection management,
-    /// interface control, and service management. For security, this flag
-    /// can only be used when running as root (UID 0).
-    #[arg(long, hide = true)]
-    allow_root_ops: bool,
+    /// Grant temporary root privileges for MINUTES (requires root).
+    /// Creates a cryptographic token that allows non-root users to execute
+    /// privileged commands for the specified duration.
+    /// Example: sudo nccli --allow-root-ops 30
+    #[arg(long, value_name = "MINUTES")]
+    allow_root_ops: Option<u32>,
+
+    /// Restrict --allow-root-ops to a specific user (requires root).
+    /// Example: sudo nccli --allow-root-ops 30 --grant-user john
+    #[arg(long, requires = "allow_root_ops")]
+    grant_user: Option<String>,
+
+    /// Revoke temporary root privileges (requires root).
+    /// Deletes the privilege token and secret key.
+    #[arg(long)]
+    revoke_root_ops: bool,
+
+    /// Show current privilege status.
+    /// Displays whether a valid privilege token exists and when it expires.
+    #[arg(long)]
+    show_privileges: bool,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -995,9 +1008,135 @@ fn get_required_privilege(command: &Commands) -> Option<PrivilegedOp> {
     }
 }
 
+/// Get UID for a username
+fn get_uid_for_user(username: &str) -> Option<u32> {
+    use std::ffi::CString;
+
+    let c_username = CString::new(username).ok()?;
+
+    #[cfg(unix)]
+    {
+        let pwd = unsafe { libc::getpwnam(c_username.as_ptr()) };
+        if pwd.is_null() {
+            None
+        } else {
+            Some(unsafe { (*pwd).pw_uid })
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let mut cli = Cli::parse();
+
+    // =========================================================================
+    // HANDLE PRIVILEGE TOKEN COMMANDS FIRST
+    // =========================================================================
+
+    // Handle --allow-root-ops (grant privileges)
+    if let Some(minutes) = cli.allow_root_ops {
+        if !is_root() {
+            eprintln!("Error: --allow-root-ops requires root privileges");
+            eprintln!("Run with: sudo nccli --allow-root-ops {}", minutes);
+            process::exit(1);
+        }
+
+        if minutes == 0 {
+            eprintln!("Error: Duration must be at least 1 minute");
+            process::exit(1);
+        }
+
+        if minutes > 1440 {
+            eprintln!("Error: Maximum duration is 1440 minutes (24 hours)");
+            process::exit(1);
+        }
+
+        let allowed_uid = cli.grant_user.as_ref().and_then(|u| get_uid_for_user(u));
+        if cli.grant_user.is_some() && allowed_uid.is_none() {
+            eprintln!("Error: User '{}' not found", cli.grant_user.as_ref().unwrap());
+            process::exit(1);
+        }
+
+        match PrivilegeToken::create(minutes, allowed_uid) {
+            Ok(token) => {
+                println!("Granted {} minutes of privileged access", minutes);
+                println!("Expires at: {}", token.format_expiry());
+                if let Some(uid) = token.allowed_uid {
+                    if let Some(username) = &cli.grant_user {
+                        println!("Restricted to user: {} (UID {})", username, uid);
+                    } else {
+                        println!("Restricted to UID: {}", uid);
+                    }
+                } else {
+                    println!("Available to: all users");
+                }
+            }
+            Err(e) => {
+                eprintln!("Error creating privilege token: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // Handle --revoke-root-ops
+    if cli.revoke_root_ops {
+        if !is_root() {
+            eprintln!("Error: --revoke-root-ops requires root privileges");
+            process::exit(1);
+        }
+
+        match revoke_token() {
+            Ok(_) => {
+                println!("Privilege token revoked");
+            }
+            Err(e) => {
+                eprintln!("Error revoking token: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // Handle --show-privileges
+    if cli.show_privileges {
+        match PrivilegeToken::load() {
+            Ok(Some(token)) => {
+                if token.verify().unwrap_or(false) {
+                    let remaining = token.remaining_seconds();
+                    println!("Privilege Status: GRANTED");
+                    println!("Remaining time: {} minutes {} seconds",
+                             remaining / 60, remaining % 60);
+                    println!("Expires at: {}", token.format_expiry());
+                    if let Some(uid) = token.allowed_uid {
+                        println!("Restricted to UID: {}", uid);
+                    }
+                } else {
+                    println!("Privilege Status: EXPIRED");
+                    println!("Token exists but has expired or is invalid for current user");
+                }
+            }
+            Ok(None) => {
+                println!("Privilege Status: NONE");
+                println!("No active privilege token");
+                println!("Root can grant access with: sudo nccli --allow-root-ops <MINUTES>");
+            }
+            Err(e) => {
+                eprintln!("Error checking privileges: {}", e);
+                process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // =========================================================================
+    // NORMAL COMMAND PROCESSING
+    // =========================================================================
 
     // If no command specified, show general status
     if cli.command.is_none() {
@@ -1011,7 +1150,7 @@ async fn main() {
     // =========================================================================
     // Check if command requires root privileges before executing
     if let Some(required_op) = get_required_privilege(command) {
-        if let Err(e) = check_privileged_op(required_op, cli.allow_root_ops) {
+        if let Err(e) = check_privileged_op(required_op) {
             eprintln!("Error: {}", e);
             process::exit(1);
         }
