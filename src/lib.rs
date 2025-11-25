@@ -97,10 +97,10 @@ pub use libcr_compat::{
 
 // CR D-Bus interface
 pub use cr_dbus::{
-    CRDbusService, CRNetworkControl, CRWiFi, CRVPN,
+    CRDbusService, CRNetworkControl, CRWiFi, CRVPN, CRPrivilege,
     CRNetworkState, CRConnectivity, CRDeviceInfo,
     CRAccessPointInfo, CRVpnInfo, CRWiFiSecurity, CRWiFiMode, CRVpnType, CRVpnState,
-    CR_DBUS_SERVICE, CR_DBUS_PATH, CR_WIFI_PATH,
+    CR_DBUS_SERVICE, CR_DBUS_PATH, CR_WIFI_PATH, CR_PRIVILEGE_PATH,
 };
 
 // D-Bus client library for communicating with netctld daemon

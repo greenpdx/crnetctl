@@ -148,6 +148,7 @@ async fn main() -> NetctlResult<()> {
     info!("    • DHCP             (/org/crrouter/NetworkControl/DHCP)");
     info!("    • DNS              (/org/crrouter/NetworkControl/DNS)");
     info!("    • Routing          (/org/crrouter/NetworkControl/Routing)");
+    info!("    • Privilege        (/org/crrouter/NetworkControl/Privilege)");
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // Main daemon loop

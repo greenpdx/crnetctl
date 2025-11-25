@@ -167,6 +167,7 @@ pub mod connection;
 pub mod dhcp;
 pub mod dns;
 pub mod routing;
+pub mod privilege;
 pub mod integration;
 
 // Re-exports for convenience
@@ -179,6 +180,7 @@ pub use connection::CRConnection;
 pub use dhcp::CRDhcp;
 pub use dns::CRDns;
 pub use routing::CRRouting;
+pub use privilege::CRPrivilege;
 pub use integration::CRDbusService;
 
 /// Library version

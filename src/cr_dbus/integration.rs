@@ -10,6 +10,7 @@ use super::connection::CRConnection;
 use super::dhcp::CRDhcp;
 use super::dns::CRDns;
 use super::routing::CRRouting;
+use super::privilege::CRPrivilege;
 use super::types::*;
 use crate::error::{NetctlError, NetctlResult};
 use crate::device::{DeviceController, Device};
@@ -39,6 +40,8 @@ pub struct CRDbusService {
     dns: Arc<CRDns>,
     /// Routing interface
     routing: Arc<CRRouting>,
+    /// Privilege token interface
+    privilege: Arc<CRPrivilege>,
     /// Running state
     running: Arc<RwLock<bool>>,
 }
@@ -62,6 +65,7 @@ impl CRDbusService {
         let dhcp = CRDhcp::new();
         let dns = CRDns::new();
         let routing = CRRouting::new();
+        let privilege = CRPrivilege::new();
 
         // Register network control interface
         connection
@@ -127,6 +131,15 @@ impl CRDbusService {
 
         info!("Registered CR Routing interface at {}", CR_ROUTING_PATH);
 
+        // Register Privilege interface
+        connection
+            .object_server()
+            .at(CR_PRIVILEGE_PATH, privilege.clone())
+            .await
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to register Privilege: {}", e)))?;
+
+        info!("Registered CR Privilege interface at {}", CR_PRIVILEGE_PATH);
+
         // Store Arc references for later use
         let network_control = Arc::new(network_control);
         let wifi = Arc::new(wifi);
@@ -135,6 +148,7 @@ impl CRDbusService {
         let dhcp = Arc::new(dhcp);
         let dns = Arc::new(dns);
         let routing = Arc::new(routing);
+        let privilege = Arc::new(privilege);
 
         // Request well-known name
         match connection.request_name(CR_DBUS_SERVICE).await {
@@ -156,6 +170,7 @@ impl CRDbusService {
             dhcp,
             dns,
             routing,
+            privilege,
             running: Arc::new(RwLock::new(true)),
         });
 
@@ -209,6 +224,11 @@ impl CRDbusService {
     /// Get Routing interface
     pub fn routing(&self) -> Arc<CRRouting> {
         self.routing.clone()
+    }
+
+    /// Get Privilege interface
+    pub fn privilege(&self) -> Arc<CRPrivilege> {
+        self.privilege.clone()
     }
 
     /// Get D-Bus connection

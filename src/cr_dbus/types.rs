@@ -35,6 +35,9 @@ pub const CR_DNS_PATH: &str = "/org/crrouter/NetworkControl/DNS";
 /// CR D-Bus Routing path
 pub const CR_ROUTING_PATH: &str = "/org/crrouter/NetworkControl/Routing";
 
+/// CR D-Bus Privilege path
+pub const CR_PRIVILEGE_PATH: &str = "/org/crrouter/NetworkControl/Privilege";
+
 /// Network control state
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
