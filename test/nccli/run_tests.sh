@@ -10,6 +10,7 @@
 #   ./run_tests.sh network   # Run only network service tests
 #   ./run_tests.sh wifi      # Run only WiFi tests
 #   ./run_tests.sh ap        # Run only Access Point tests
+#   ./run_tests.sh dhcpc     # Run only DHCP client tests
 
 set -e
 
@@ -103,6 +104,7 @@ case "$TEST_CATEGORY" in
         run_test_file "$SCRIPT_DIR/test_network.sh" "Network Services"
         run_test_file "$SCRIPT_DIR/test_wifi.sh" "WiFi"
         run_test_file "$SCRIPT_DIR/test_ap.sh" "Access Point"
+        run_test_file "$SCRIPT_DIR/test_dhcp_client.sh" "DHCP Client"
         run_test_file "$SCRIPT_DIR/test_dbus.sh" "D-Bus Communication"
         ;;
     general)
@@ -129,6 +131,9 @@ case "$TEST_CATEGORY" in
     ap)
         run_test_file "$SCRIPT_DIR/test_ap.sh" "Access Point"
         ;;
+    dhcpc)
+        run_test_file "$SCRIPT_DIR/test_dhcp_client.sh" "DHCP Client"
+        ;;
     *)
         echo "Unknown test category: $TEST_CATEGORY"
         echo ""
@@ -141,6 +146,7 @@ case "$TEST_CATEGORY" in
         echo "  network    - DHCP, DNS, Route tests"
         echo "  wifi       - WiFi command tests"
         echo "  ap         - Access Point tests"
+        echo "  dhcpc      - DHCP client tests (crdhcpc integration)"
         echo "  dbus       - D-Bus communication tests"
         exit 1
         ;;
