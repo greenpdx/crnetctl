@@ -56,8 +56,11 @@ impl NetctlClient {
         let proxy = zbus::fdo::DBusProxy::new(&connection).await
             .map_err(|e| NetctlError::ServiceError(format!("Failed to create D-Bus proxy: {}", e)))?;
 
-        match proxy.name_has_owner(CR_DBUS_SERVICE.try_into()
-            .expect("CR_DBUS_SERVICE is a valid D-Bus service name")).await {
+        let service_name = CR_DBUS_SERVICE.try_into()
+            .map_err(|_| NetctlError::ServiceError(
+                format!("Invalid D-Bus service name: {}", CR_DBUS_SERVICE)
+            ))?;
+        match proxy.name_has_owner(service_name).await {
             Ok(has_owner) => {
                 if !has_owner {
                     return Err(NetctlError::ServiceError(

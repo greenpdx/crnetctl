@@ -193,10 +193,9 @@ impl IPsecBackend {
             }
 
             // Connection section
-            if line.starts_with("conn ") {
+            if let Some(conn_name) = line.strip_prefix("conn ") {
                 in_conn = true;
-                let conn_name = line.strip_prefix("conn ")
-                    .expect("line starts with 'conn ', checked above").trim();
+                let conn_name = conn_name.trim();
                 if conn_name != "%default" {
                     settings.insert("connection_name".to_string(), json!(conn_name));
                 }

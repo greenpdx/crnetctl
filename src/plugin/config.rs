@@ -133,9 +133,10 @@ impl PluginConfigManager {
             update_fn(config);
         }
 
-        // Save the updated config - we know the key exists since we just modified it
+        // Save the updated config - key must exist since we just modified it
         let config = self.configs.get(plugin_id)
-            .expect("config exists, just modified above").clone();
+            .ok_or_else(|| NetctlError::NotFound(format!("Plugin config '{}' not found", plugin_id)))?
+            .clone();
         self.save_config(&config).await?;
 
         Ok(())

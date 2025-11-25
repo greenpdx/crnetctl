@@ -187,8 +187,9 @@ impl WireGuardBackend {
         // Add peers to settings
         if !peers.is_empty() {
             if peers.len() == 1 {
-                settings.insert("peer".to_string(), peers.into_iter().next()
-                    .expect("peers has exactly one element, checked above"));
+                if let Some(peer) = peers.into_iter().next() {
+                    settings.insert("peer".to_string(), peer);
+                }
             } else {
                 settings.insert("peers".to_string(), json!(peers));
             }
