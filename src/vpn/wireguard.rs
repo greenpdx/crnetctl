@@ -187,7 +187,8 @@ impl WireGuardBackend {
         // Add peers to settings
         if !peers.is_empty() {
             if peers.len() == 1 {
-                settings.insert("peer".to_string(), peers.into_iter().next().unwrap());
+                settings.insert("peer".to_string(), peers.into_iter().next()
+                    .expect("peers has exactly one element, checked above"));
             } else {
                 settings.insert("peers".to_string(), json!(peers));
             }
@@ -289,8 +290,12 @@ impl VpnBackend for WireGuardBackend {
         common::write_secure_config(&config_path, &config_content, 0o600).await?;
 
         // Bring up interface with wg-quick
+        let config_path_str = config_path.to_str()
+            .ok_or_else(|| NetctlError::InvalidParameter(
+                "Config path contains invalid UTF-8".to_string()
+            ))?;
         let output = Command::new("wg-quick")
-            .args(&["up", config_path.to_str().unwrap()])
+            .args(&["up", config_path_str])
             .output()
             .await
             .map_err(|e| NetctlError::ServiceError(format!("Failed to start WireGuard: {}", e)))?;

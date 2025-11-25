@@ -1,7 +1,7 @@
 //! CRIPConfig - IP configuration (libnm NMIPConfig equivalent)
 
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 
 /// IP configuration (equivalent to NMIPConfig)
 ///

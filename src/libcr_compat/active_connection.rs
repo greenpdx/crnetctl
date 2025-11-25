@@ -97,6 +97,7 @@ impl CRActiveConnection {
     }
 
     /// Sets the connection state
+    #[allow(dead_code)]
     pub(crate) fn set_state(&mut self, state: CRActiveConnectionState) {
         self.state = state;
     }
@@ -112,11 +113,13 @@ impl CRActiveConnection {
     }
 
     /// Sets whether this is the default IPv4 connection
+    #[allow(dead_code)]
     pub(crate) fn set_default(&mut self, is_default: bool) {
         self.default4 = is_default;
     }
 
     /// Sets whether this is the default IPv6 connection
+    #[allow(dead_code)]
     pub(crate) fn set_default6(&mut self, is_default: bool) {
         self.default6 = is_default;
     }

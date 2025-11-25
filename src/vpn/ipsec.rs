@@ -195,7 +195,8 @@ impl IPsecBackend {
             // Connection section
             if line.starts_with("conn ") {
                 in_conn = true;
-                let conn_name = line.strip_prefix("conn ").unwrap().trim();
+                let conn_name = line.strip_prefix("conn ")
+                    .expect("line starts with 'conn ', checked above").trim();
                 if conn_name != "%default" {
                     settings.insert("connection_name".to_string(), json!(conn_name));
                 }
@@ -320,8 +321,13 @@ impl VpnBackend for IPsecBackend {
         let conf_path = self.config_base_path.join(format!("connections/{}.conf", conn_name));
         let secrets_path = self.config_base_path.join(format!("secrets/{}.secrets", conn_name));
 
-        common::ensure_directory_exists(conf_path.parent().unwrap()).await?;
-        common::ensure_directory_exists(secrets_path.parent().unwrap()).await?;
+        let conf_parent = conf_path.parent()
+            .ok_or_else(|| NetctlError::InvalidParameter("Invalid config path".to_string()))?;
+        let secrets_parent = secrets_path.parent()
+            .ok_or_else(|| NetctlError::InvalidParameter("Invalid secrets path".to_string()))?;
+
+        common::ensure_directory_exists(conf_parent).await?;
+        common::ensure_directory_exists(secrets_parent).await?;
 
         common::write_secure_config(&conf_path, &conf_content, 0o644).await?;
         common::write_secure_config(&secrets_path, &secrets_content, 0o600).await?;

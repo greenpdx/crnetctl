@@ -124,19 +124,19 @@ impl OpenVpnPlugin {
                 args.push(type_str.to_string());
             }
 
-            if let Some(ca) = settings.get("ca") {
+            if let Some(ca) = settings.get("ca").and_then(|v| v.as_str()) {
                 args.push("--ca".to_string());
-                args.push(ca.as_str().unwrap().to_string());
+                args.push(ca.to_string());
             }
 
-            if let Some(cert) = settings.get("cert") {
+            if let Some(cert) = settings.get("cert").and_then(|v| v.as_str()) {
                 args.push("--cert".to_string());
-                args.push(cert.as_str().unwrap().to_string());
+                args.push(cert.to_string());
             }
 
-            if let Some(key) = settings.get("key") {
+            if let Some(key) = settings.get("key").and_then(|v| v.as_str()) {
                 args.push("--key".to_string());
-                args.push(key.as_str().unwrap().to_string());
+                args.push(key.to_string());
             }
         }
 

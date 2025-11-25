@@ -3,7 +3,7 @@
 //! Common types and enums used across the CR D-Bus interface
 
 use serde::{Deserialize, Serialize};
-use zbus::zvariant::{Type, Value};
+use zbus::zvariant::Type;
 
 /// CR D-Bus service name
 pub const CR_DBUS_SERVICE: &str = "org.crrouter.NetworkControl";

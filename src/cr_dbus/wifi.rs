@@ -121,7 +121,7 @@ impl CRWiFi {
     async fn connect(
         &self,
         ssid: &str,
-        password: &str,
+        _password: &str,
         security: u32,
     ) -> fdo::Result<()> {
         info!("CR WiFi: Connecting to SSID: {}", ssid);
@@ -152,7 +152,7 @@ impl CRWiFi {
     async fn start_access_point(
         &self,
         ssid: &str,
-        password: &str,
+        _password: &str,
         channel: u32,
     ) -> fdo::Result<()> {
         info!("CR WiFi: Starting AP mode - SSID: {}, Channel: {}", ssid, channel);

@@ -91,8 +91,9 @@ impl PluginManager {
         #[cfg(feature = "dbus-nm")]
         if let Some(ref service) = dbus_service {
             if let Some(ref conn) = self.dbus_conn {
-                let meta = cache.get(&plugin_id).unwrap();
-                self.expose_plugin_on_dbus(conn.clone(), &plugin_id, service, meta).await?;
+                if let Some(meta) = cache.get(&plugin_id) {
+                    self.expose_plugin_on_dbus(conn.clone(), &plugin_id, service, meta).await?;
+                }
             }
         }
 

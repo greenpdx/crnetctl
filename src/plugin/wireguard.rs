@@ -256,8 +256,12 @@ impl NetworkPlugin for WireGuardPlugin {
             .map_err(|e| NetctlError::ServiceError(format!("Failed to write config: {}", e)))?;
 
         // Bring up interface with wg-quick
+        let config_path_str = config_path.to_str()
+            .ok_or_else(|| NetctlError::InvalidParameter(
+                "Config path contains invalid UTF-8".to_string()
+            ))?;
         let output = Command::new("wg-quick")
-            .args(&["up", config_path.to_str().unwrap()])
+            .args(&["up", config_path_str])
             .output()
             .await
             .map_err(|e| NetctlError::ServiceError(format!("Failed to start WireGuard: {}", e)))?;

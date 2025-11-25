@@ -311,7 +311,7 @@ impl CRClient {
     }
 
     /// Sets whether wireless is enabled (equivalent to nm_client_wireless_set_enabled)
-    pub async fn wireless_set_enabled(&self, enabled: bool) -> NetctlResult<()> {
+    pub async fn wireless_set_enabled(&self, _enabled: bool) -> NetctlResult<()> {
         // In a real implementation, enable/disable WiFi devices
         Ok(())
     }

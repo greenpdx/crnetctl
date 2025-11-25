@@ -133,6 +133,7 @@ impl Default for CRSettingWireless {
 }
 
 /// Wireless security setting (equivalent to NMSettingWirelessSecurity)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CRSettingWirelessSecurity {
     /// Key management (none, ieee8021x, wpa-none, wpa-psk, wpa-eap, sae, owe, wpa-psk-sha256, wpa-eap-suite-b-192)

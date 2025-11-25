@@ -54,6 +54,7 @@ pub enum CRActiveConnectionState {
 }
 
 /// Device state reasons (equivalent to NMDeviceStateReason)
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CRDeviceStateReason {
     /// No reason given
@@ -185,6 +186,7 @@ pub enum CRDeviceStateReason {
 }
 
 /// Connection type enumeration
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CRConnectionType {
     /// Ethernet connection

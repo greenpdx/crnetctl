@@ -60,7 +60,7 @@ impl CRDhcp {
         let mut leases = self.leases.write().await;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("System time is before UNIX epoch")
             .as_secs();
         leases.retain(|lease| lease.expiry > now);
     }

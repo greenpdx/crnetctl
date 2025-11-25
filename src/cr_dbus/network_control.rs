@@ -7,7 +7,7 @@ use crate::error::{NetctlError, NetctlResult};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn, debug};
+use tracing::{info, debug};
 use zbus::{Connection, fdo, interface};
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::Value;

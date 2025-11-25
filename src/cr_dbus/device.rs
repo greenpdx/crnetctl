@@ -3,6 +3,7 @@
 //! D-Bus interface for individual network devices
 
 use super::types::*;
+#[allow(unused_imports)]
 use crate::error::NetctlResult;
 use std::collections::HashMap;
 use std::sync::Arc;

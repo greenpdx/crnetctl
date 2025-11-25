@@ -3,7 +3,7 @@
 //! This module monitors network interface link state changes (up/down)
 //! and triggers actions like starting DHCP when links come up.
 
-use crate::error::{NetctlError, NetctlResult};
+use crate::error::NetctlResult;
 use crate::dhcp_client::DhcpClientController;
 use crate::interface::InterfaceController;
 use serde::{Deserialize, Serialize};

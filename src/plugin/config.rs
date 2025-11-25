@@ -133,8 +133,9 @@ impl PluginConfigManager {
             update_fn(config);
         }
 
-        // Save the updated config
-        let config = self.configs.get(plugin_id).unwrap().clone();
+        // Save the updated config - we know the key exists since we just modified it
+        let config = self.configs.get(plugin_id)
+            .expect("config exists, just modified above").clone();
         self.save_config(&config).await?;
 
         Ok(())

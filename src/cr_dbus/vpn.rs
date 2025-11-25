@@ -118,7 +118,7 @@ impl CRVPN {
         name: &str,
         remote: &str,
         auth_method: &str,
-        credentials: HashMap<String, String>,
+        _credentials: HashMap<String, String>,
     ) -> fdo::Result<()> {
         info!("CR VPN: Connecting to IPsec - name: {}, remote: {}, auth: {}",
               name, remote, auth_method);
@@ -127,7 +127,7 @@ impl CRVPN {
     }
 
     /// Connect to Arti/Tor
-    async fn connect_arti(&self, name: &str, config: HashMap<String, String>) -> fdo::Result<()> {
+    async fn connect_arti(&self, name: &str, _config: HashMap<String, String>) -> fdo::Result<()> {
         info!("CR VPN: Connecting to Arti/Tor - name: {}", name);
         // Connection will be handled by integration layer
         Ok(())

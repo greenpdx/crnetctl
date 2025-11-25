@@ -4,16 +4,17 @@
 
 use crate::error::{NetctlError, NetctlResult};
 use crate::validation;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::process::Command;
 use tokio::fs;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// WPA Supplicant controller
 pub struct WpaSupplicantController {
     /// Path to wpa_supplicant binary
     wpa_bin: PathBuf,
-    /// Path to wpa_cli binary
+    /// Path to wpa_cli binary (reserved for future use)
+    #[allow(dead_code)]
     wpa_cli_bin: PathBuf,
     /// Configuration directory
     config_dir: PathBuf,

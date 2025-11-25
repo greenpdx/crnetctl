@@ -6,10 +6,10 @@
 use crate::error::{NetctlError, NetctlResult};
 use crate::validation;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Path to crdhcpc binary
 const CRDHCPC_BIN: &str = "/usr/local/bin/crdhcpc";
@@ -253,7 +253,7 @@ impl DhcpClientController {
             return Ok(None);
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let _stdout = String::from_utf8_lossy(&output.stdout);
         // Parse the output to extract lease information
         // For now, return a basic structure - actual parsing depends on crdhcpc output format
         Ok(Some(DhcpLease {
