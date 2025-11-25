@@ -28,9 +28,13 @@ check_daemon() {
 }
 
 # Check if running as root
+# NOTE: Most nccli operations do NOT require root since netctld daemon
+# handles privileged operations via D-Bus. Root is only needed for:
+# - Starting/stopping the netctld daemon itself
+# - Running crdhcpc daemon directly (not via netctld)
+# - Direct hardware access bypassing the daemon
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        echo -e "${YELLOW}WARNING: Some tests require root privileges${NC}"
         return 1
     fi
     return 0

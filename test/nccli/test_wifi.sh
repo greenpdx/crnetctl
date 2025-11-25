@@ -179,49 +179,43 @@ run_expect_output "device wifi hotspot --help shows channel option" \
     $NCCLI device wifi hotspot --help
 
 # ===========================================
-# RADIO CONTROL TESTS (require root)
+# RADIO CONTROL TESTS (via D-Bus to netctld)
 # ===========================================
 
 echo ""
-echo "--- Radio Control Tests (require root) ---"
+echo "--- Radio Control Tests (via D-Bus) ---"
 
-if check_root; then
-    if [ -n "$WIFI_IFACE" ]; then
-        # Save current state
-        ORIG_STATE=$($NCCLI -t radio wifi 2>/dev/null)
+# Note: These tests run as normal user - netctld daemon handles privileged ops
+if [ -n "$WIFI_IFACE" ]; then
+    # Save current state
+    ORIG_STATE=$($NCCLI -t radio wifi 2>/dev/null)
 
-        # Test: radio wifi on
-        run_expect_success "radio wifi on" \
-            $NCCLI radio wifi on
+    # Test: radio wifi on
+    run_expect_success "radio wifi on" \
+        $NCCLI radio wifi on
 
-        # Verify state
-        run_expect_output "radio wifi is enabled after 'on'" \
-            "enabled" \
-            $NCCLI radio wifi
+    # Verify state
+    run_expect_output "radio wifi is enabled after 'on'" \
+        "enabled" \
+        $NCCLI radio wifi
 
-        # Test: device wifi radio on
-        run_expect_success "device wifi radio on" \
-            $NCCLI device wifi radio on
+    # Test: device wifi radio on
+    run_expect_success "device wifi radio on" \
+        $NCCLI device wifi radio on
 
-        # Test: device wifi radio off
-        run_expect_success "device wifi radio off" \
-            $NCCLI device wifi radio off
+    # Test: device wifi radio off
+    run_expect_success "device wifi radio off" \
+        $NCCLI device wifi radio off
 
-        # Restore original state
-        if [ "$ORIG_STATE" = "enabled" ]; then
-            $NCCLI radio wifi on > /dev/null 2>&1
-        fi
-    else
-        test_skip "radio wifi on" "No WiFi interface found"
-        test_skip "radio wifi state check" "No WiFi interface found"
-        test_skip "device wifi radio on" "No WiFi interface found"
-        test_skip "device wifi radio off" "No WiFi interface found"
+    # Restore original state
+    if [ "$ORIG_STATE" = "enabled" ]; then
+        $NCCLI radio wifi on > /dev/null 2>&1
     fi
 else
-    test_skip "radio wifi on" "Requires root privileges"
-    test_skip "radio wifi state check" "Requires root privileges"
-    test_skip "device wifi radio on" "Requires root privileges"
-    test_skip "device wifi radio off" "Requires root privileges"
+    test_skip "radio wifi on" "No WiFi interface found"
+    test_skip "radio wifi state check" "No WiFi interface found"
+    test_skip "device wifi radio on" "No WiFi interface found"
+    test_skip "device wifi radio off" "No WiFi interface found"
 fi
 
 # ===========================================

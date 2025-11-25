@@ -65,11 +65,15 @@ fi
 
 echo -e "${GREEN}✓${NC} netctld daemon is running"
 
-# Check root (warning only)
+# Check root (info only - most nccli tests don't need root)
+# nccli communicates with netctld daemon via D-Bus, so the daemon handles
+# privileged operations. Root is only needed for:
+# - Starting/stopping netctld itself
+# - Running crdhcpc daemon directly
 if check_root; then
-    echo -e "${GREEN}✓${NC} Running as root (all tests available)"
+    echo -e "${GREEN}✓${NC} Running as root"
 else
-    echo -e "${YELLOW}!${NC} Not running as root (some tests will be skipped)"
+    echo -e "${BLUE}i${NC} Running as non-root (nccli uses D-Bus to netctld for privileged ops)"
 fi
 
 echo ""

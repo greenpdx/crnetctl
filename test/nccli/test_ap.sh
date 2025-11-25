@@ -215,131 +215,125 @@ run_expect_output "device wifi hotspot --help shows channel" \
     $NCCLI device wifi hotspot --help
 
 # ===========================================
-# AP OPERATIONS TESTS (require root and WiFi)
+# AP OPERATIONS TESTS (via D-Bus to netctld)
 # ===========================================
 
 echo ""
-echo "--- AP Operations Tests (require root and WiFi) ---"
+echo "--- AP Operations Tests (via D-Bus) ---"
 
-if check_root; then
-    if [ -n "$WIFI_IFACE" ]; then
-        # Check if interface supports AP mode
-        test_start "check WiFi AP mode support"
-        if iw list 2>/dev/null | grep -q "* AP"; then
-            test_pass "check WiFi AP mode support"
-            AP_SUPPORTED=true
-        else
-            test_skip "check WiFi AP mode support" "Interface may not support AP mode"
-            AP_SUPPORTED=false
-        fi
+# Note: nccli communicates with netctld via D-Bus, so root is NOT required
+# for most operations. netctld runs as root and handles privileged ops.
 
-        if [ "$AP_SUPPORTED" = true ]; then
-            # Test: Stop any existing AP first
-            $NCCLI ap stop > /dev/null 2>&1
+if [ -n "$WIFI_IFACE" ]; then
+    # Check if interface supports AP mode
+    test_start "check WiFi AP mode support"
+    if iw list 2>/dev/null | grep -q "* AP"; then
+        test_pass "check WiFi AP mode support"
+        AP_SUPPORTED=true
+    else
+        test_skip "check WiFi AP mode support" "Interface may not support AP mode"
+        AP_SUPPORTED=false
+    fi
 
-            # Test: AP status before starting
-            run_expect_output "ap status before start shows stopped" \
+    if [ "$AP_SUPPORTED" = true ]; then
+        # Test: Stop any existing AP first
+        $NCCLI ap stop > /dev/null 2>&1
+
+        # Test: AP status before starting
+        run_expect_output "ap status before start shows stopped" \
+            "stopped" \
+            $NCCLI ap status
+
+        # Test: Start AP with valid parameters
+        # Note: This test may still fail if hostapd is not installed or
+        # if the interface doesn't support AP mode
+        test_start "ap start with valid parameters"
+        output=$($NCCLI ap start "$WIFI_IFACE" \
+            --ssid "TestAP-$$" \
+            --password "testpassword123" \
+            --channel 6 \
+            --band "2.4GHz" \
+            --ip "10.255.99.1/24" 2>&1)
+        exit_code=$?
+
+        if [ $exit_code -eq 0 ]; then
+            test_pass "ap start with valid parameters"
+
+            # Test: AP status while running
+            run_expect_output "ap status while running shows running" \
+                "running" \
+                $NCCLI ap status
+
+            # Test: AP status terse while running
+            run_expect_output "ap status terse while running" \
+                "running" \
+                $NCCLI -t ap status
+
+            # Test: Starting AP while already running should fail
+            run_expect_failure "ap start while already running fails" \
+                $NCCLI ap start "$WIFI_IFACE" --ssid "AnotherAP" --ip "10.255.98.1/24"
+
+            # Test: Stop AP
+            run_expect_success "ap stop succeeds" \
+                $NCCLI ap stop
+
+            # Test: AP status after stopping
+            sleep 1
+            run_expect_output "ap status after stop shows stopped" \
                 "stopped" \
                 $NCCLI ap status
 
-            # Test: Start AP with valid parameters
-            # Note: This test may still fail if hostapd is not installed or
-            # if the interface doesn't support AP mode
-            test_start "ap start with valid parameters"
-            output=$($NCCLI ap start "$WIFI_IFACE" \
-                --ssid "TestAP-$$" \
-                --password "testpassword123" \
-                --channel 6 \
-                --band "2.4GHz" \
-                --ip "10.255.99.1/24" 2>&1)
-            exit_code=$?
-
-            if [ $exit_code -eq 0 ]; then
-                test_pass "ap start with valid parameters"
-
-                # Test: AP status while running
-                run_expect_output "ap status while running shows running" \
-                    "running" \
-                    $NCCLI ap status
-
-                # Test: AP status terse while running
-                run_expect_output "ap status terse while running" \
-                    "running" \
-                    $NCCLI -t ap status
-
-                # Test: Starting AP while already running should fail
-                run_expect_failure "ap start while already running fails" \
-                    $NCCLI ap start "$WIFI_IFACE" --ssid "AnotherAP" --ip "10.255.98.1/24"
-
-                # Test: Stop AP
-                run_expect_success "ap stop succeeds" \
-                    $NCCLI ap stop
-
-                # Test: AP status after stopping
-                sleep 1
-                run_expect_output "ap status after stop shows stopped" \
-                    "stopped" \
-                    $NCCLI ap status
-
-            elif echo "$output" | grep -qi "hostapd"; then
-                test_skip "ap start with valid parameters" "hostapd not available or failed"
-                test_skip "ap status while running" "AP not started"
-                test_skip "ap status terse while running" "AP not started"
-                test_skip "ap start while already running" "AP not started"
-                test_skip "ap stop" "AP not started"
-                test_skip "ap status after stop" "AP not started"
-            else
-                test_fail "ap start with valid parameters" "Failed: $output"
-                test_skip "ap status while running" "AP not started"
-                test_skip "ap status terse while running" "AP not started"
-                test_skip "ap start while already running" "AP not started"
-                test_skip "ap stop" "AP not started"
-                test_skip "ap status after stop" "AP not started"
-            fi
-
-            # Cleanup: ensure AP is stopped
-            $NCCLI ap stop > /dev/null 2>&1
-
-            # Test: AP with open network (no password)
-            test_start "ap start with open network"
-            output=$($NCCLI ap start "$WIFI_IFACE" \
-                --ssid "OpenTestAP-$$" \
-                --channel 11 \
-                --band "2.4GHz" \
-                --ip "10.255.97.1/24" 2>&1)
-            exit_code=$?
-
-            if [ $exit_code -eq 0 ]; then
-                test_pass "ap start with open network"
-                $NCCLI ap stop > /dev/null 2>&1
-            elif echo "$output" | grep -qi "hostapd"; then
-                test_skip "ap start with open network" "hostapd not available"
-            else
-                test_fail "ap start with open network" "Failed: $output"
-            fi
-
+        elif echo "$output" | grep -qi "hostapd"; then
+            test_skip "ap start with valid parameters" "hostapd not available or failed"
+            test_skip "ap status while running" "AP not started"
+            test_skip "ap status terse while running" "AP not started"
+            test_skip "ap start while already running" "AP not started"
+            test_skip "ap stop" "AP not started"
+            test_skip "ap status after stop" "AP not started"
         else
-            test_skip "ap start with valid parameters" "AP mode not supported"
-            test_skip "ap status while running" "AP mode not supported"
-            test_skip "ap start while already running" "AP mode not supported"
-            test_skip "ap stop" "AP mode not supported"
-            test_skip "ap start with open network" "AP mode not supported"
+            test_fail "ap start with valid parameters" "Failed: $output"
+            test_skip "ap status while running" "AP not started"
+            test_skip "ap status terse while running" "AP not started"
+            test_skip "ap start while already running" "AP not started"
+            test_skip "ap stop" "AP not started"
+            test_skip "ap status after stop" "AP not started"
         fi
+
+        # Cleanup: ensure AP is stopped
+        $NCCLI ap stop > /dev/null 2>&1
+
+        # Test: AP with open network (no password)
+        test_start "ap start with open network"
+        output=$($NCCLI ap start "$WIFI_IFACE" \
+            --ssid "OpenTestAP-$$" \
+            --channel 11 \
+            --band "2.4GHz" \
+            --ip "10.255.97.1/24" 2>&1)
+        exit_code=$?
+
+        if [ $exit_code -eq 0 ]; then
+            test_pass "ap start with open network"
+            $NCCLI ap stop > /dev/null 2>&1
+        elif echo "$output" | grep -qi "hostapd"; then
+            test_skip "ap start with open network" "hostapd not available"
+        else
+            test_fail "ap start with open network" "Failed: $output"
+        fi
+
     else
-        test_skip "check WiFi AP mode support" "No WiFi interface found"
-        test_skip "ap start with valid parameters" "No WiFi interface found"
-        test_skip "ap status while running" "No WiFi interface found"
-        test_skip "ap start while already running" "No WiFi interface found"
-        test_skip "ap stop" "No WiFi interface found"
-        test_skip "ap start with open network" "No WiFi interface found"
+        test_skip "ap start with valid parameters" "AP mode not supported"
+        test_skip "ap status while running" "AP mode not supported"
+        test_skip "ap start while already running" "AP mode not supported"
+        test_skip "ap stop" "AP mode not supported"
+        test_skip "ap start with open network" "AP mode not supported"
     fi
 else
-    test_skip "check WiFi AP mode support" "Requires root privileges"
-    test_skip "ap start with valid parameters" "Requires root privileges"
-    test_skip "ap status while running" "Requires root privileges"
-    test_skip "ap start while already running" "Requires root privileges"
-    test_skip "ap stop" "Requires root privileges"
-    test_skip "ap start with open network" "Requires root privileges"
+    test_skip "check WiFi AP mode support" "No WiFi interface found"
+    test_skip "ap start with valid parameters" "No WiFi interface found"
+    test_skip "ap status while running" "No WiFi interface found"
+    test_skip "ap start while already running" "No WiFi interface found"
+    test_skip "ap stop" "No WiFi interface found"
+    test_skip "ap start with open network" "No WiFi interface found"
 fi
 
 # ===========================================

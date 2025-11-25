@@ -243,63 +243,69 @@ else
 fi
 
 # ===========================================
-# CRDHCPC OPERATIONS TESTS (require root)
+# CRDHCPC OPERATIONS TESTS
 # ===========================================
 
 echo ""
-echo "--- crdhcpc Operations Tests (require root) ---"
+echo "--- crdhcpc Operations Tests ---"
 
-if check_root; then
-    if [ "$CRDHCPC_INSTALLED" = true ]; then
-        # Test interface for DHCP operations
-        TEST_IFACE="${ETH_IFACE:-$WIFI_IFACE}"
+# Note: crdhcpc daemon uses Unix socket (not D-Bus), so direct daemon control
+# requires root. However, nccli would use D-Bus to netctld which handles this.
+# These tests are for direct crdhcpc usage.
 
-        if [ -n "$TEST_IFACE" ]; then
-            echo "Using test interface: $TEST_IFACE"
+if [ "$CRDHCPC_INSTALLED" = true ]; then
+    # Test interface for DHCP operations
+    TEST_IFACE="${ETH_IFACE:-$WIFI_IFACE}"
 
-            # Test: Start DHCP client (may already be running)
-            test_start "crdhcpc start on $TEST_IFACE"
-            output=$($CRDHCPC_BIN start "$TEST_IFACE" 2>&1 &)
-            pid=$!
-            sleep 2
-            kill $pid 2>/dev/null
-            # This may fail if already running, which is OK
-            test_pass "crdhcpc start on $TEST_IFACE"
+    if [ -n "$TEST_IFACE" ]; then
+        echo "Using test interface: $TEST_IFACE"
 
-            if [ "$CRDHCPC_RUNNING" = true ]; then
-                # Test: Renew DHCP lease
-                test_start "crdhcpc renew on $TEST_IFACE"
-                output=$($CRDHCPC_BIN renew "$TEST_IFACE" 2>&1)
-                exit_code=$?
-                if [ $exit_code -eq 0 ]; then
-                    test_pass "crdhcpc renew on $TEST_IFACE"
-                elif echo "$output" | grep -qi "no.*lease\|not.*running"; then
-                    test_skip "crdhcpc renew on $TEST_IFACE" "No active lease to renew"
-                else
-                    test_fail "crdhcpc renew on $TEST_IFACE" "$output"
-                fi
+        # Test: Start DHCP client (may already be running)
+        # Note: This requires the daemon to be running, or will start standalone
+        test_start "crdhcpc start on $TEST_IFACE"
+        output=$($CRDHCPC_BIN start "$TEST_IFACE" 2>&1 &)
+        pid=$!
+        sleep 2
+        kill $pid 2>/dev/null
+        # This may fail if already running, which is OK
+        test_pass "crdhcpc start on $TEST_IFACE"
 
-                # Test: Release DHCP lease (be careful - this will drop the lease!)
-                # We'll skip this to avoid disrupting the network
-                test_skip "crdhcpc release on $TEST_IFACE" "Skipped to avoid network disruption"
-
-                # Test: Stop DHCP client (careful - may drop network)
-                # We'll skip this too
-                test_skip "crdhcpc stop on $TEST_IFACE" "Skipped to avoid network disruption"
+        if [ "$CRDHCPC_RUNNING" = true ]; then
+            # Test: Renew DHCP lease (communicates with daemon via Unix socket)
+            test_start "crdhcpc renew on $TEST_IFACE"
+            output=$($CRDHCPC_BIN renew "$TEST_IFACE" 2>&1)
+            exit_code=$?
+            if [ $exit_code -eq 0 ]; then
+                test_pass "crdhcpc renew on $TEST_IFACE"
+            elif echo "$output" | grep -qi "no.*lease\|not.*running"; then
+                test_skip "crdhcpc renew on $TEST_IFACE" "No active lease to renew"
             else
-                test_skip "crdhcpc renew" "Daemon not running"
-                test_skip "crdhcpc release" "Daemon not running"
-                test_skip "crdhcpc stop" "Daemon not running"
+                test_fail "crdhcpc renew on $TEST_IFACE" "$output"
             fi
-        else
-            test_skip "crdhcpc start" "No network interface available"
-            test_skip "crdhcpc renew" "No network interface available"
-            test_skip "crdhcpc release" "No network interface available"
-            test_skip "crdhcpc stop" "No network interface available"
-        fi
 
-        # Test: Start daemon (if not already running)
-        if [ "$CRDHCPC_RUNNING" = false ]; then
+            # Test: Release DHCP lease (be careful - this will drop the lease!)
+            # We'll skip this to avoid disrupting the network
+            test_skip "crdhcpc release on $TEST_IFACE" "Skipped to avoid network disruption"
+
+            # Test: Stop DHCP client (careful - may drop network)
+            # We'll skip this too
+            test_skip "crdhcpc stop on $TEST_IFACE" "Skipped to avoid network disruption"
+        else
+            test_skip "crdhcpc renew" "Daemon not running"
+            test_skip "crdhcpc release" "Daemon not running"
+            test_skip "crdhcpc stop" "Daemon not running"
+        fi
+    else
+        test_skip "crdhcpc start" "No network interface available"
+        test_skip "crdhcpc renew" "No network interface available"
+        test_skip "crdhcpc release" "No network interface available"
+        test_skip "crdhcpc stop" "No network interface available"
+    fi
+
+    # Test: Start daemon (if not already running)
+    # Note: Starting the daemon itself requires root (to bind raw sockets)
+    if [ "$CRDHCPC_RUNNING" = false ]; then
+        if check_root; then
             test_start "crdhcpc daemon start"
             # Start in background with foreground flag for easy cleanup
             $CRDHCPC_BIN daemon --foreground &
@@ -316,21 +322,17 @@ if check_root; then
                 kill $DAEMON_PID 2>/dev/null
             fi
         else
-            test_skip "crdhcpc daemon start" "Daemon already running"
+            test_skip "crdhcpc daemon start" "Starting daemon requires root (raw sockets)"
         fi
     else
-        test_skip "crdhcpc start" "crdhcpc not installed"
-        test_skip "crdhcpc renew" "crdhcpc not installed"
-        test_skip "crdhcpc release" "crdhcpc not installed"
-        test_skip "crdhcpc stop" "crdhcpc not installed"
-        test_skip "crdhcpc daemon start" "crdhcpc not installed"
+        test_skip "crdhcpc daemon start" "Daemon already running"
     fi
 else
-    test_skip "crdhcpc start" "Requires root privileges"
-    test_skip "crdhcpc renew" "Requires root privileges"
-    test_skip "crdhcpc release" "Requires root privileges"
-    test_skip "crdhcpc stop" "Requires root privileges"
-    test_skip "crdhcpc daemon start" "Requires root privileges"
+    test_skip "crdhcpc start" "crdhcpc not installed"
+    test_skip "crdhcpc renew" "crdhcpc not installed"
+    test_skip "crdhcpc release" "crdhcpc not installed"
+    test_skip "crdhcpc stop" "crdhcpc not installed"
+    test_skip "crdhcpc daemon start" "crdhcpc not installed"
 fi
 
 # ===========================================
@@ -477,20 +479,16 @@ else
     test_skip "crdhcpc systemd service exists" "Service file not found"
 fi
 
-# Test: Check systemd service status (if installed)
-if check_root; then
-    test_start "crdhcpc systemd service status"
-    if systemctl is-active dhcp-client-standalone.service > /dev/null 2>&1; then
-        test_pass "crdhcpc systemd service status"
-        echo "  Service is active"
-    elif systemctl is-enabled dhcp-client-standalone.service > /dev/null 2>&1; then
-        test_pass "crdhcpc systemd service status"
-        echo "  Service is enabled but not active"
-    else
-        test_skip "crdhcpc systemd service status" "Service not installed or not enabled"
-    fi
+# Test: Check systemd service status (systemctl doesn't need root for status queries)
+test_start "crdhcpc systemd service status"
+if systemctl is-active dhcp-client-standalone.service > /dev/null 2>&1; then
+    test_pass "crdhcpc systemd service status"
+    echo "  Service is active"
+elif systemctl is-enabled dhcp-client-standalone.service > /dev/null 2>&1; then
+    test_pass "crdhcpc systemd service status"
+    echo "  Service is enabled but not active"
 else
-    test_skip "crdhcpc systemd service status" "Requires root privileges"
+    test_skip "crdhcpc systemd service status" "Service not installed or not enabled"
 fi
 
 # ===========================================
