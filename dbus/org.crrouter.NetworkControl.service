@@ -1,5 +1,5 @@
 [D-BUS Service]
 Name=org.crrouter.NetworkControl
-Exec=/usr/bin/netctld --foreground
+Exec=/usr/local/bin/netctld --foreground
 User=root
-SystemdService=netctld.service
+SystemdService=netctl.service

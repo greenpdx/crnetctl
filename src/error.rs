@@ -33,6 +33,8 @@ pub enum NetctlError {
     NotFound(String),
     /// Invalid state
     InvalidState(String),
+    /// Connection failed
+    ConnectionFailed { reason: String },
 }
 
 impl fmt::Display for NetctlError {
@@ -58,6 +60,7 @@ impl fmt::Display for NetctlError {
             NetctlError::Timeout(msg) => write!(f, "Timeout: {}", msg),
             NetctlError::NotFound(msg) => write!(f, "Not found: {}", msg),
             NetctlError::InvalidState(msg) => write!(f, "Invalid state: {}", msg),
+            NetctlError::ConnectionFailed { reason } => write!(f, "Connection failed: {}", reason),
         }
     }
 }
