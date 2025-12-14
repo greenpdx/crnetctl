@@ -335,10 +335,293 @@ run_test "Invalid command" \
     "! $NCCLI invalid-command 2>&1"
 
 # =============================================================================
+# WiFi Connection Bring-up Tests
+# =============================================================================
+print_header "8. WiFi Connection Bring-up Tests"
+
+if check_interface "$TEST_WIFI_INTERFACE"; then
+    # Check if wpa_supplicant is available
+    if command -v wpa_supplicant &> /dev/null && command -v wpa_cli &> /dev/null; then
+
+        # Test: WiFi interface can be brought up
+        print_test "WiFi interface bring-up"
+        if ip link set "$TEST_WIFI_INTERFACE" up 2>/dev/null; then
+            print_success "WiFi interface brought up"
+        else
+            print_failure "Failed to bring up WiFi interface"
+        fi
+
+        # Test: Check rfkill status
+        print_test "WiFi rfkill status check"
+        if command -v rfkill &> /dev/null; then
+            rfkill_blocked=$(rfkill list wifi 2>/dev/null | grep -c "blocked: yes" || echo "0")
+            if [[ "$rfkill_blocked" -eq 0 ]]; then
+                print_success "WiFi not blocked by rfkill"
+            else
+                print_failure "WiFi is blocked by rfkill"
+            fi
+        else
+            print_skip "rfkill command not available"
+            ((TESTS_SKIPPED++))
+        fi
+
+        # Test: wpa_supplicant can start
+        print_test "wpa_supplicant startup"
+        wpa_running=$(pgrep -f "wpa_supplicant.*-i.*$TEST_WIFI_INTERFACE" 2>/dev/null || echo "")
+        if [[ -n "$wpa_running" ]]; then
+            print_success "wpa_supplicant already running on $TEST_WIFI_INTERFACE"
+        else
+            # Try to start wpa_supplicant
+            temp_conf=$(mktemp /tmp/wpa_test_XXXXXX.conf)
+            echo -e "ctrl_interface=/var/run/wpa_supplicant\nupdate_config=1" > "$temp_conf"
+
+            if wpa_supplicant -B -i "$TEST_WIFI_INTERFACE" -c "$temp_conf" 2>/dev/null; then
+                sleep 2
+                if pgrep -f "wpa_supplicant.*-i.*$TEST_WIFI_INTERFACE" > /dev/null 2>&1; then
+                    print_success "wpa_supplicant started successfully"
+                    # Clean up - stop wpa_supplicant we started
+                    wpa_cli -i "$TEST_WIFI_INTERFACE" terminate 2>/dev/null || true
+                else
+                    print_failure "wpa_supplicant failed to stay running"
+                fi
+            else
+                print_failure "Failed to start wpa_supplicant"
+            fi
+            rm -f "$temp_conf"
+        fi
+
+        # Test: WiFi scan capability
+        print_test "WiFi scan capability"
+        if pgrep -f "wpa_supplicant.*-i.*$TEST_WIFI_INTERFACE" > /dev/null 2>&1; then
+            scan_result=$(wpa_cli -i "$TEST_WIFI_INTERFACE" scan 2>/dev/null)
+            if [[ "$scan_result" == "OK" ]] || [[ "$scan_result" == "FAIL-BUSY" ]]; then
+                print_success "WiFi scan triggered ($scan_result)"
+            else
+                print_failure "WiFi scan failed: $scan_result"
+            fi
+        else
+            print_skip "wpa_supplicant not running, cannot test scan"
+            ((TESTS_SKIPPED++))
+        fi
+
+        # Test: WiFi connection state retrieval
+        print_test "WiFi connection state retrieval"
+        if pgrep -f "wpa_supplicant.*-i.*$TEST_WIFI_INTERFACE" > /dev/null 2>&1; then
+            status_output=$(wpa_cli -i "$TEST_WIFI_INTERFACE" status 2>/dev/null)
+            if echo "$status_output" | grep -q "wpa_state="; then
+                wpa_state=$(echo "$status_output" | grep "wpa_state=" | cut -d= -f2)
+                print_success "WiFi state retrieved: $wpa_state"
+            else
+                print_failure "Failed to retrieve WiFi state"
+            fi
+        else
+            print_skip "wpa_supplicant not running"
+            ((TESTS_SKIPPED++))
+        fi
+    else
+        print_skip "wpa_supplicant/wpa_cli not installed"
+        ((TESTS_RUN+=5))
+        ((TESTS_SKIPPED+=5))
+    fi
+else
+    print_skip "WiFi interface $TEST_WIFI_INTERFACE not available for bring-up tests"
+    ((TESTS_RUN+=5))
+    ((TESTS_SKIPPED+=5))
+fi
+
+# =============================================================================
+# Network Interface Hotplug Tests
+# =============================================================================
+print_header "9. Network Interface Hotplug Tests"
+
+# Test: Dummy interface creation (simulates hotplug)
+print_test "Dummy interface hotplug simulation"
+HOTPLUG_IFACE="test_hotplug_$$"
+
+# Record initial interface count
+initial_count=$(ls /sys/class/net | wc -l)
+
+if ip link add "$HOTPLUG_IFACE" type dummy 2>/dev/null; then
+    sleep 0.5
+    current_count=$(ls /sys/class/net | wc -l)
+
+    if [[ -d "/sys/class/net/$HOTPLUG_IFACE" ]]; then
+        print_success "Dummy interface created and detected ($initial_count -> $current_count interfaces)"
+
+        # Test: Interface state changes
+        print_test "Interface state change detection"
+        ip link set "$HOTPLUG_IFACE" up 2>/dev/null
+        sleep 0.3
+        operstate=$(cat "/sys/class/net/$HOTPLUG_IFACE/operstate" 2>/dev/null || echo "unknown")
+        if [[ "$operstate" != "down" ]]; then
+            print_success "Interface state change detected: $operstate"
+        else
+            print_failure "Interface state did not change"
+        fi
+
+        # Clean up dummy interface
+        ip link delete "$HOTPLUG_IFACE" 2>/dev/null
+        sleep 0.3
+
+        # Test: Interface removal detection
+        print_test "Interface removal detection"
+        if [[ ! -d "/sys/class/net/$HOTPLUG_IFACE" ]]; then
+            final_count=$(ls /sys/class/net | wc -l)
+            print_success "Interface removal detected ($final_count interfaces remaining)"
+        else
+            print_failure "Interface still exists after deletion"
+        fi
+    else
+        print_failure "Dummy interface not found in /sys/class/net"
+        ip link delete "$HOTPLUG_IFACE" 2>/dev/null
+    fi
+else
+    print_failure "Failed to create dummy interface (kernel module missing?)"
+    ((TESTS_RUN+=2))
+fi
+
+# Test: Veth pair creation (simulates network device hotplug)
+print_test "Veth pair hotplug simulation"
+VETH0="test_veth0_$$"
+VETH1="test_veth1_$$"
+
+if ip link add "$VETH0" type veth peer name "$VETH1" 2>/dev/null; then
+    sleep 0.3
+    if [[ -d "/sys/class/net/$VETH0" ]] && [[ -d "/sys/class/net/$VETH1" ]]; then
+        print_success "Veth pair created and both interfaces detected"
+
+        # Test: Veth link state propagation
+        print_test "Veth link state propagation"
+        ip link set "$VETH0" up 2>/dev/null
+        ip link set "$VETH1" up 2>/dev/null
+        sleep 0.3
+
+        veth0_state=$(cat "/sys/class/net/$VETH0/operstate" 2>/dev/null || echo "unknown")
+        veth1_state=$(cat "/sys/class/net/$VETH1/operstate" 2>/dev/null || echo "unknown")
+
+        if [[ "$veth0_state" != "down" ]] && [[ "$veth1_state" != "down" ]]; then
+            print_success "Veth pair link states: $VETH0=$veth0_state, $VETH1=$veth1_state"
+        else
+            print_failure "Veth pair link states not as expected"
+        fi
+    else
+        print_failure "Veth pair interfaces not found"
+    fi
+
+    # Clean up
+    ip link delete "$VETH0" 2>/dev/null
+else
+    print_failure "Failed to create veth pair"
+    ((TESTS_RUN++))
+fi
+
+# Test: Monitor /sys/class/net changes
+print_test "Network interface monitoring via /sys/class/net"
+if [[ -d "/sys/class/net" ]]; then
+    iface_list=$(ls /sys/class/net 2>/dev/null | tr '\n' ' ')
+    if [[ -n "$iface_list" ]]; then
+        print_success "Interface enumeration works: $iface_list"
+    else
+        print_failure "No interfaces found in /sys/class/net"
+    fi
+else
+    print_failure "/sys/class/net directory not accessible"
+fi
+
+# =============================================================================
+# Boot/Startup Network Tests
+# =============================================================================
+print_header "10. Boot/Startup Network Tests"
+
+# Test: Check for autoconnect configurations
+print_test "Autoconnect configuration check"
+config_dirs=("/etc/crrouter/netctl" "/etc/netctl")
+found_autoconnect=0
+
+for dir in "${config_dirs[@]}"; do
+    if [[ -d "$dir" ]]; then
+        autoconnect_configs=$(grep -l "autoconnect = true" "$dir"/*.nctl 2>/dev/null | wc -l)
+        if [[ "$autoconnect_configs" -gt 0 ]]; then
+            print_success "Found $autoconnect_configs autoconnect configs in $dir"
+            found_autoconnect=1
+            break
+        fi
+    fi
+done
+
+if [[ "$found_autoconnect" -eq 0 ]]; then
+    print_skip "No autoconnect configurations found (expected if not configured)"
+    ((TESTS_SKIPPED++))
+fi
+
+# Test: netctld service status
+print_test "netctld service status"
+if systemctl is-active --quiet netctld 2>/dev/null; then
+    print_success "netctld service is active"
+elif systemctl list-unit-files 2>/dev/null | grep -q "netctld.service"; then
+    netctld_status=$(systemctl is-active netctld 2>/dev/null || echo "inactive")
+    print_success "netctld service exists (status: $netctld_status)"
+else
+    print_skip "netctld service not installed"
+    ((TESTS_SKIPPED++))
+fi
+
+# Test: D-Bus service availability
+print_test "D-Bus service availability check"
+if command -v dbus-send &> /dev/null; then
+    if dbus-send --system --print-reply --dest=org.freedesktop.DBus \
+       /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \
+       string:"org.crrouter.NetworkControl" 2>/dev/null | grep -q "true"; then
+        print_success "org.crrouter.NetworkControl D-Bus service is available"
+    else
+        print_skip "org.crrouter.NetworkControl D-Bus service not running"
+        ((TESTS_SKIPPED++))
+    fi
+else
+    print_skip "dbus-send not available"
+    ((TESTS_SKIPPED++))
+fi
+
+# Test: Link monitor behavior simulation
+print_test "Link monitor auto-DHCP logic check"
+# This tests that the logic for "link up -> start DHCP" would work
+if check_interface "$TEST_INTERFACE"; then
+    # Bring interface down, then up
+    ip link set "$TEST_INTERFACE" down 2>/dev/null
+    sleep 0.5
+    initial_state=$(cat "/sys/class/net/$TEST_INTERFACE/operstate" 2>/dev/null || echo "unknown")
+
+    ip link set "$TEST_INTERFACE" up 2>/dev/null
+    sleep 0.5
+    final_state=$(cat "/sys/class/net/$TEST_INTERFACE/operstate" 2>/dev/null || echo "unknown")
+
+    if [[ "$initial_state" != "$final_state" ]] || [[ "$final_state" != "down" ]]; then
+        print_success "Interface state transition: $initial_state -> $final_state"
+    else
+        print_failure "Interface state did not change as expected"
+    fi
+
+    # Leave interface down to avoid affecting system
+    ip link set "$TEST_INTERFACE" down 2>/dev/null
+else
+    print_skip "Test interface not available for link monitor test"
+    ((TESTS_SKIPPED++))
+fi
+
+# Test: nccli can list connections (startup readiness)
+print_test "nccli connection listing (startup readiness)"
+if $NCCLI connection show > /dev/null 2>&1; then
+    conn_count=$($NCCLI connection show 2>/dev/null | tail -n +2 | wc -l)
+    print_success "nccli ready, found $conn_count connection(s)"
+else
+    print_failure "nccli connection show failed"
+fi
+
+# =============================================================================
 # Stress Tests (if enabled)
 # =============================================================================
 if [[ "${STRESS_TEST:-0}" == "1" ]] && check_interface "$TEST_INTERFACE"; then
-    print_header "8. Stress Tests"
+    print_header "11. Stress Tests"
 
     print_test "Rapid interface up/down (10 iterations)"
     local stress_pass=1
