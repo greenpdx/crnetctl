@@ -15,9 +15,13 @@ use super::types::*;
 use crate::error::{NetctlError, NetctlResult};
 use crate::device::{DeviceController, Device};
 use crate::wpa_supplicant::{WpaSupplicantController, WpaSecurityType};
+use crate::network_monitor::{NetworkMonitor, NetworkEvent};
+use crate::connection_manager::ConnectionManager;
+use crate::dhcp_client::DhcpClientController;
+use crate::interface::InterfaceController;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn, error, debug};
 use zbus::Connection;
 
 /// CR D-Bus service manager
@@ -49,6 +53,14 @@ pub struct CRDbusService {
     wpa_supplicant: Arc<WpaSupplicantController>,
     /// Primary WiFi interface name (e.g., wlan0)
     wifi_interface: Arc<RwLock<Option<String>>>,
+    /// Network event monitor
+    network_monitor: Arc<NetworkMonitor>,
+    /// Connection manager for config-based connections
+    connection_manager: Arc<ConnectionManager>,
+    /// DHCP client controller
+    dhcp_client: Arc<DhcpClientController>,
+    /// Interface controller
+    interface_controller: Arc<InterfaceController>,
 }
 
 impl CRDbusService {
@@ -155,6 +167,17 @@ impl CRDbusService {
         let routing = Arc::new(routing);
         let privilege = Arc::new(privilege);
 
+        // Create network monitoring and connection management components
+        let network_monitor = Arc::new(NetworkMonitor::new());
+        let connection_manager = Arc::new(ConnectionManager::new(None));
+        let dhcp_client = Arc::new(DhcpClientController::new());
+        let interface_controller = Arc::new(InterfaceController::new());
+
+        // Initialize connection manager
+        if let Err(e) = connection_manager.initialize().await {
+            warn!("Failed to initialize connection manager: {}", e);
+        }
+
         // Request well-known name
         info!("Requesting D-Bus name: {}", CR_DBUS_SERVICE);
         match connection.request_name(CR_DBUS_SERVICE).await {
@@ -180,6 +203,10 @@ impl CRDbusService {
             running: Arc::new(RwLock::new(true)),
             wpa_supplicant: Arc::new(WpaSupplicantController::new()),
             wifi_interface: Arc::new(RwLock::new(None)),
+            network_monitor,
+            connection_manager,
+            dhcp_client,
+            interface_controller,
         });
 
         info!("CR D-Bus service started successfully");
@@ -189,6 +216,12 @@ impl CRDbusService {
     /// Stop the CR D-Bus service
     pub async fn stop(&self) -> NetctlResult<()> {
         info!("Stopping CR D-Bus service");
+
+        // Stop network monitor
+        if let Err(e) = self.network_monitor.stop().await {
+            warn!("Failed to stop network monitor: {}", e);
+        }
+
         let mut running = self.running.write().await;
         *running = false;
         Ok(())
@@ -197,6 +230,303 @@ impl CRDbusService {
     /// Check if service is running
     pub async fn is_running(&self) -> bool {
         *self.running.read().await
+    }
+
+    /// Start network event monitoring
+    ///
+    /// This starts the network monitor and spawns a task to handle events.
+    /// When link state changes are detected, it will:
+    /// - For interfaces with DHCP config: start/stop DHCP based on link state
+    /// - Update D-Bus device states
+    /// - Emit appropriate signals
+    pub async fn start_network_monitor(self: &Arc<Self>) -> NetctlResult<()> {
+        info!("Starting network event monitor");
+
+        // Start the monitor
+        self.network_monitor.start().await?;
+
+        // Subscribe to events
+        let mut event_rx = self.network_monitor.subscribe();
+        let service = self.clone();
+
+        // Spawn event handler task
+        tokio::spawn(async move {
+            info!("Network event handler started");
+
+            while let Ok(event) = event_rx.recv().await {
+                if let Err(e) = service.handle_network_event(event).await {
+                    error!("Error handling network event: {}", e);
+                }
+            }
+
+            info!("Network event handler stopped");
+        });
+
+        // Check initial state of existing interfaces
+        self.initialize_existing_interfaces().await;
+
+        Ok(())
+    }
+
+    /// Initialize existing interfaces based on their current state
+    ///
+    /// This handles interfaces that already exist at boot time.
+    /// The monitor only fires events on transitions, so we need to
+    /// check initial state and act accordingly.
+    async fn initialize_existing_interfaces(&self) {
+        info!("Checking initial state of existing interfaces");
+
+        // Read all interfaces from /sys/class/net
+        let entries = match tokio::fs::read_dir("/sys/class/net").await {
+            Ok(e) => e,
+            Err(e) => {
+                warn!("Failed to read /sys/class/net: {}", e);
+                return;
+            }
+        };
+
+        let mut entries = entries;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = match entry.file_name().into_string() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+
+            // Skip loopback
+            if name == "lo" {
+                continue;
+            }
+
+            // Check if we have a config for this interface
+            let config = match self.find_connection_config_for_interface(&name).await {
+                Some(c) => c,
+                None => continue,
+            };
+
+            let (config_name, cfg) = config;
+            info!("Found config '{}' for interface {}", config_name, name);
+
+            // For WiFi interfaces: try to connect
+            if Self::is_wifi_interface(&name) && cfg.wifi.is_some() {
+                info!("Initiating WiFi auto-connect for {}", name);
+                if let Err(e) = self.try_wifi_auto_connect(&name).await {
+                    warn!("WiFi auto-connect failed for {}: {}", name, e);
+                }
+                continue; // DHCP will start when link comes up
+            }
+
+            // For ethernet/other interfaces: bring link layer UP first, then check carrier
+            if cfg.ipv4.as_ref().map(|v| v.method.as_str()) == Some("auto") {
+                info!("Bringing up interface {} link layer", name);
+
+                // Step 1: Bring interface link layer UP (ip link set dev eth0 up)
+                if let Err(e) = self.interface_controller.up(&name).await {
+                    warn!("Failed to bring up interface {}: {}", name, e);
+                    continue;
+                }
+
+                // Step 2: Wait for carrier detection (cable needs to be sensed)
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+                // Step 3: Check if carrier/link is now up
+                let operstate_path = format!("/sys/class/net/{}/operstate", name);
+                let is_up = match tokio::fs::read_to_string(&operstate_path).await {
+                    Ok(state) => {
+                        let s = state.trim();
+                        s == "up" || s == "unknown" // "unknown" can mean up for some drivers
+                    }
+                    Err(_) => false,
+                };
+
+                if is_up {
+                    info!("Interface {} has carrier, starting DHCP", name);
+
+                    // Step 4: Start DHCP
+                    if let Err(e) = self.dhcp_client.start(&name).await {
+                        error!("Failed to start DHCP on {}: {}", name, e);
+                    } else {
+                        info!("DHCP client started on {} (boot)", name);
+                    }
+                } else {
+                    info!("Interface {} is up but no carrier (cable unplugged?), waiting for link", name);
+                    // Monitor will detect when cable is plugged in
+                }
+            }
+        }
+    }
+
+    /// Handle a network event
+    async fn handle_network_event(&self, event: NetworkEvent) -> NetctlResult<()> {
+        match event {
+            NetworkEvent::InterfaceStateChanged { name, is_up, .. } => {
+                self.handle_interface_state_change(&name, is_up).await?;
+            }
+            NetworkEvent::InterfaceAdded { name, index } => {
+                info!("Interface added: {} (index {})", name, index);
+                // Try WiFi auto-connect if this is a WiFi interface with config
+                if Self::is_wifi_interface(&name) {
+                    if let Err(e) = self.try_wifi_auto_connect(&name).await {
+                        debug!("WiFi auto-connect failed for {}: {}", name, e);
+                    }
+                }
+            }
+            NetworkEvent::InterfaceRemoved { name, index } => {
+                info!("Interface removed: {} (index {})", name, index);
+                // Could remove device from D-Bus here
+            }
+            NetworkEvent::InterfaceAddressChanged { name, address, .. } => {
+                debug!("Address changed on {}: {}", name, address);
+            }
+            NetworkEvent::LinkPropertiesChanged { name, .. } => {
+                debug!("Link properties changed on {}", name);
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle interface state change (link up/down)
+    async fn handle_interface_state_change(&self, interface: &str, is_up: bool) -> NetctlResult<()> {
+        // Skip loopback
+        if interface == "lo" {
+            return Ok(());
+        }
+
+        info!("Interface {} state changed: {}", interface, if is_up { "UP" } else { "DOWN" });
+
+        // Check if we have a connection config for this interface
+        let config = self.find_connection_config_for_interface(interface).await;
+
+        if is_up {
+            // Link came up
+            if let Some((name, cfg)) = config {
+                info!("Found connection config '{}' for interface {}", name, interface);
+
+                // Check if it's configured for DHCP
+                if cfg.ipv4.as_ref().map(|v| v.method.as_str()) == Some("auto") {
+                    info!("Starting DHCP on {} (config: {})", interface, name);
+
+                    // Bring interface up first
+                    if let Err(e) = self.interface_controller.up(interface).await {
+                        warn!("Failed to bring up interface {}: {}", interface, e);
+                    }
+
+                    // Small delay for interface to stabilize
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+                    // Start DHCP
+                    if let Err(e) = self.dhcp_client.start(interface).await {
+                        error!("Failed to start DHCP on {}: {}", interface, e);
+                    } else {
+                        info!("DHCP client started on {}", interface);
+                    }
+                }
+            } else {
+                debug!("No connection config found for interface {}", interface);
+            }
+
+            // Update D-Bus device state
+            let device_path = format!("{}/{}", CR_DEVICE_PATH_PREFIX, interface);
+            if let Err(e) = self.network_control.update_device_state(&device_path, CRDeviceState::Activated).await {
+                debug!("Failed to update device state: {}", e);
+            }
+        } else {
+            // Link went down
+            if let Some((name, cfg)) = config {
+                // Check if DHCP was configured
+                if cfg.ipv4.as_ref().map(|v| v.method.as_str()) == Some("auto") {
+                    info!("Stopping DHCP on {} (config: {})", interface, name);
+
+                    // Release and stop DHCP
+                    let _ = self.dhcp_client.release(interface).await;
+                    if let Err(e) = self.dhcp_client.stop(interface).await {
+                        warn!("Failed to stop DHCP on {}: {}", interface, e);
+                    }
+                }
+
+                // Try WiFi reconnect if this is a WiFi interface
+                if Self::is_wifi_interface(interface) && cfg.wifi.is_some() {
+                    info!("WiFi link down on {}, attempting reconnect", interface);
+                    // Small delay before reconnect attempt
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    if let Err(e) = self.try_wifi_auto_connect(interface).await {
+                        warn!("WiFi reconnect failed for {}: {}", interface, e);
+                    }
+                }
+            }
+
+            // Update D-Bus device state
+            let device_path = format!("{}/{}", CR_DEVICE_PATH_PREFIX, interface);
+            if let Err(e) = self.network_control.update_device_state(&device_path, CRDeviceState::Disconnected).await {
+                debug!("Failed to update device state: {}", e);
+            }
+        }
+
+        // Emit D-Bus signal
+        let device_path = format!("{}/{}", CR_DEVICE_PATH_PREFIX, interface);
+        let state = if is_up { CRDeviceState::Activated } else { CRDeviceState::Disconnected };
+        if let Err(e) = super::network_control::signals::emit_device_state_changed(
+            &self.connection,
+            &device_path,
+            state,
+        ).await {
+            warn!("Failed to emit DeviceStateChanged signal: {}", e);
+        }
+
+        Ok(())
+    }
+
+    /// Find connection config that matches an interface
+    async fn find_connection_config_for_interface(&self, interface: &str) -> Option<(String, crate::connection_config::NetctlConnectionConfig)> {
+        // List all connection configs
+        let configs = match self.connection_manager.list_connections().await {
+            Ok(c) => c,
+            Err(e) => {
+                debug!("Failed to list connections: {}", e);
+                return None;
+            }
+        };
+
+        // Find one that matches this interface
+        for name in configs {
+            if let Ok(config) = self.connection_manager.load_connection(&name).await {
+                if config.connection.interface_name.as_deref() == Some(interface) {
+                    return Some((name, config));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Check if interface name indicates a WiFi interface
+    fn is_wifi_interface(interface: &str) -> bool {
+        interface.starts_with("wlan") || interface.starts_with("wl")
+    }
+
+    /// Try to auto-connect WiFi based on config
+    async fn try_wifi_auto_connect(&self, interface: &str) -> NetctlResult<()> {
+        // Find config for this interface
+        let (name, config) = self.find_connection_config_for_interface(interface).await
+            .ok_or_else(|| NetctlError::NotFound(format!("No config found for {}", interface)))?;
+
+        // Check if it's a WiFi config
+        let wifi = config.wifi.as_ref()
+            .ok_or_else(|| NetctlError::ConfigError(format!("Config '{}' is not a WiFi config", name)))?;
+
+        let ssid = &wifi.ssid;
+
+        // Get password from wifi-security section
+        let psk = config.wifi_security.as_ref().and_then(|sec| {
+            sec.psk.as_deref().or(sec.password.as_deref())
+        });
+
+        info!("Auto-connecting WiFi {} to SSID '{}' (config: {})", interface, ssid, name);
+
+        // Connect via wpa_supplicant
+        self.wpa_supplicant.connect(interface, ssid, psk).await?;
+
+        info!("WiFi auto-connect initiated for {} -> '{}'", interface, ssid);
+        Ok(())
     }
 
     /// Get network control interface

@@ -134,10 +134,11 @@ impl NetworkMonitor {
 
         info!("Using rtnetlink for network event monitoring");
 
-        // Get initial interface list
-        let mut links = handle.link().get().execute();
-        let mut known_interfaces: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        // Track interfaces: index -> (name, is_up)
+        let mut known_interfaces: std::collections::HashMap<u32, (String, bool)> = std::collections::HashMap::new();
 
+        // Get initial interface list and their states
+        let mut links = handle.link().get().execute();
         while let Some(link) = links.try_next().await
             .map_err(|e| NetctlError::ServiceError(format!("Failed to get links: {}", e)))? {
             if let Some(name) = link.attributes.iter().find_map(|attr| {
@@ -147,8 +148,10 @@ impl NetworkMonitor {
                     None
                 }
             }) {
-                known_interfaces.insert(link.header.index, name.clone());
-                debug!("Found interface: {} (index {})", name, link.header.index);
+                // Read operstate from sysfs for accurate link state
+                let is_up = Self::read_operstate(&name).await;
+                known_interfaces.insert(link.header.index, (name.clone(), is_up));
+                debug!("Found interface: {} (index {}) state: {}", name, link.header.index, if is_up { "up" } else { "down" });
             }
         }
 
@@ -158,7 +161,7 @@ impl NetworkMonitor {
         while *running.read().await {
             // Refresh interface list
             let mut current_links = handle.link().get().execute();
-            let mut current_interfaces = std::collections::HashMap::new();
+            let mut current_interfaces: std::collections::HashMap<u32, (String, bool)> = std::collections::HashMap::new();
 
             while let Some(link) = current_links.try_next().await
                 .map_err(|e| NetctlError::ServiceError(format!("Failed to get links: {}", e)))? {
@@ -170,7 +173,10 @@ impl NetworkMonitor {
                     }
                 }) {
                     let index = link.header.index;
-                    current_interfaces.insert(index, name.clone());
+
+                    // Read operstate from sysfs for accurate link state
+                    let is_up = Self::read_operstate(&name).await;
+                    current_interfaces.insert(index, (name.clone(), is_up));
 
                     // Check if interface is new
                     if !known_interfaces.contains_key(&index) {
@@ -181,18 +187,25 @@ impl NetworkMonitor {
                         });
                     }
 
-                    // Check state - check if IFF_UP flag is set
-                    let is_up = !link.header.flags.is_empty();
-                    let _ = event_tx.send(NetworkEvent::InterfaceStateChanged {
-                        index,
-                        name,
-                        is_up,
-                    });
+                    // Check if state changed (only send event on actual transition)
+                    if let Some((_, old_is_up)) = known_interfaces.get(&index) {
+                        if *old_is_up != is_up {
+                            info!("Interface {} state changed: {} -> {}",
+                                  name,
+                                  if *old_is_up { "up" } else { "down" },
+                                  if is_up { "up" } else { "down" });
+                            let _ = event_tx.send(NetworkEvent::InterfaceStateChanged {
+                                index,
+                                name,
+                                is_up,
+                            });
+                        }
+                    }
                 }
             }
 
             // Check for removed interfaces
-            for (index, name) in known_interfaces.iter() {
+            for (index, (name, _)) in known_interfaces.iter() {
                 if !current_interfaces.contains_key(index) {
                     info!("Interface removed: {} (index {})", name, index);
                     let _ = event_tx.send(NetworkEvent::InterfaceRemoved {
@@ -209,6 +222,15 @@ impl NetworkMonitor {
         }
 
         Ok(())
+    }
+
+    /// Read operstate from sysfs - returns true if interface is "up"
+    async fn read_operstate(interface: &str) -> bool {
+        let operstate_path = format!("/sys/class/net/{}/operstate", interface);
+        match tokio::fs::read_to_string(&operstate_path).await {
+            Ok(state) => state.trim() == "up",
+            Err(_) => false,
+        }
     }
 
     /// Monitor using periodic polling (fallback)

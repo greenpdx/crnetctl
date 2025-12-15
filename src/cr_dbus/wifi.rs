@@ -71,12 +71,36 @@ impl CRWiFi {
 
 #[interface(name = "org.crrouter.NetworkControl.WiFi")]
 impl CRWiFi {
-    /// Get WiFi enabled state
+    // ============ D-Bus Properties ============
+
+    /// WirelessEnabled property - emits PropertiesChanged when modified
+    #[zbus(property)]
+    async fn wireless_enabled(&self) -> bool {
+        *self.enabled.read().await
+    }
+
+    /// Set WirelessEnabled property - automatically emits PropertiesChanged
+    #[zbus(property)]
+    async fn set_wireless_enabled(&self, enabled: bool) {
+        info!("CR WiFi: Setting WirelessEnabled to {}", enabled);
+        let mut e = self.enabled.write().await;
+        *e = enabled;
+    }
+
+    /// Scanning property - true when scan is in progress
+    #[zbus(property)]
+    async fn scanning(&self) -> bool {
+        *self.scanning.read().await
+    }
+
+    // ============ D-Bus Methods ============
+
+    /// Get WiFi enabled state (legacy method, use WirelessEnabled property instead)
     async fn get_enabled(&self) -> bool {
         *self.enabled.read().await
     }
 
-    /// Set WiFi enabled state
+    /// Set WiFi enabled state (legacy method, use WirelessEnabled property instead)
     async fn set_enabled(&self, enabled: bool) -> fdo::Result<()> {
         info!("CR WiFi: Setting enabled to {}", enabled);
         self.set_enabled_internal(enabled).await;
@@ -204,6 +228,29 @@ impl Default for CRWiFi {
 /// Helper module for emitting WiFi signals
 pub mod signals {
     use super::*;
+
+    /// Set WirelessEnabled property and emit PropertiesChanged signal
+    pub async fn set_wireless_enabled(conn: &Connection, enabled: bool) -> NetctlResult<()> {
+        if let Ok(iface_ref) = conn
+            .object_server()
+            .interface::<_, CRWiFi>(CR_WIFI_PATH)
+            .await
+        {
+            let iface = iface_ref.get().await;
+            // Update internal state
+            {
+                let mut e = iface.enabled.write().await;
+                *e = enabled;
+            }
+            // Emit PropertiesChanged signal using the generated method on the interface
+            let signal_emitter = iface_ref.signal_emitter();
+            iface.wireless_enabled_changed(&signal_emitter)
+                .await
+                .map_err(|e| NetctlError::ServiceError(format!("Failed to emit WirelessEnabled change: {}", e)))?;
+            info!("CR WiFi: WirelessEnabled changed to {}", enabled);
+        }
+        Ok(())
+    }
 
     /// Emit ScanCompleted signal
     pub async fn emit_scan_completed(conn: &Connection) -> NetctlResult<()> {

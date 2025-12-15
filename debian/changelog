@@ -1,3 +1,9 @@
+netctl (0.1.0-3) unstable; urgency=medium
+
+  * docs/AP_SETUP.md,docs/NETWORKMANAGER_COMPATIBILITY.md,src/bin/nccli.rs,src/bin/netctld.rs,src/cr_dbus/integration.rs
+
+ -- netctl developers <netctl@example.com>  Mon, 15 Dec 2025 23:16:30 +0000
+
 netctl (0.1.0-2) unstable; urgency=medium
 
   * .gitignore,debian/.debhelper/generated/netctl/dh_installchangelogs.dch.trimmed,debian/.debhelper/generated/netctl/installed-by-dh_installdocs,debian/.debhelper/generated/netctl/installed-by-dh_installman,debian/.debhelper/generated/netctl/postinst.service

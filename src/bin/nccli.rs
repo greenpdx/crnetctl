@@ -1644,15 +1644,22 @@ async fn handle_radio(cmd: &RadioCommands, cli: &Cli) -> NetctlResult<()> {
         }
         RadioCommands::Wifi { state } => {
             if let Some(s) = state {
+                let iface_ctrl = interface::InterfaceController::new();
                 match s.as_str() {
                     "on" => {
+                        // Bring up WiFi interfaces
+                        let interfaces = iface_ctrl.list().await?;
+                        for iface in &interfaces {
+                            if iface.starts_with("wlan") || iface.starts_with("wlp") {
+                                let _ = iface_ctrl.up(iface).await;
+                            }
+                        }
                         if !cli.terse {
                             println!("WiFi radio enabled");
                         }
                     }
                     "off" => {
                         // Bring down all WiFi interfaces
-                        let iface_ctrl = interface::InterfaceController::new();
                         let interfaces = iface_ctrl.list().await?;
                         for iface in interfaces {
                             if iface.starts_with("wlan") || iface.starts_with("wlp") {
@@ -1833,11 +1840,11 @@ async fn handle_connection(cmd: &ConnectionCommands, cli: &Cli) -> NetctlResult<
             // WiFi-specific settings
             if r#type == "wifi" {
                 config.push_str("[wifi]\n");
-                if let Some(s) = ssid {
-                    // Validate SSID
-                    validate_ssid(s)?;
-                    config.push_str(&format!("ssid = \"{}\"\n", s));
-                }
+                let s = ssid.as_ref()
+                    .ok_or(NetctlError::InvalidParameter("SSID is required for WiFi connections".to_string()))?;
+                // Validate SSID
+                validate_ssid(s)?;
+                config.push_str(&format!("ssid = \"{}\"\n", s));
                 config.push_str("mode = \"infrastructure\"\n\n");
 
                 if let Some(pwd) = password {
@@ -2341,16 +2348,27 @@ async fn handle_device_wifi(cmd: &WifiDeviceCommands, cli: &Cli) -> NetctlResult
                 }
             }
         }
-        WifiDeviceCommands::Connect { ssid, ifname, bssid: _, password: _, wep_key_type: _, hidden: _, private: _ } => {
+        WifiDeviceCommands::Connect { ssid, ifname, bssid: _, password, wep_key_type: _, hidden: _, private: _ } => {
             // Get WiFi interface
+            let interfaces = iface_ctrl.list().await?;
             let interface = if let Some(iface) = ifname {
+                // Validate that the specified interface exists and is a WiFi interface
+                if !interfaces.contains(&iface) {
+                    return Err(NetctlError::NotFound(format!("Interface '{}' not found", iface)));
+                }
+                if !iface.starts_with("wlan") && !iface.starts_with("wlp") {
+                    return Err(NetctlError::InvalidParameter(format!("Interface '{}' is not a WiFi interface", iface)));
+                }
                 iface.clone()
             } else {
-                let interfaces = iface_ctrl.list().await?;
                 interfaces.into_iter()
                     .find(|i| i.starts_with("wlan") || i.starts_with("wlp"))
                     .ok_or(NetctlError::NotFound("No WiFi interface found".to_string()))?
             };
+
+            // Use wpa_supplicant to connect
+            let wpa_ctrl = wpa_supplicant::WpaSupplicantController::new();
+            wpa_ctrl.connect(&interface, ssid, password.as_deref()).await?;
 
             if !cli.terse {
                 println!("Device '{}' successfully activated with '{}'",

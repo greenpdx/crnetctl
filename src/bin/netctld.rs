@@ -152,6 +152,18 @@ async fn main() -> NetctlResult<()> {
         info!("Device discovery disabled (--no-discovery)");
     }
 
+    // Start network event monitoring
+    info!("Starting network event monitor...");
+    match service.start_network_monitor().await {
+        Ok(_) => {
+            info!("✓ Network event monitor started");
+        }
+        Err(e) => {
+            warn!("⚠️  Failed to start network monitor: {}", e);
+            warn!("   Continuing without network event monitoring");
+        }
+    }
+
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     info!("  Network Control Daemon is ready");
     info!("  D-Bus Services:");
@@ -166,6 +178,9 @@ async fn main() -> NetctlResult<()> {
     info!("    • DNS              (/org/crrouter/NetworkControl/DNS)");
     info!("    • Routing          (/org/crrouter/NetworkControl/Routing)");
     info!("    • Privilege        (/org/crrouter/NetworkControl/Privilege)");
+    info!("  Features:");
+    info!("    • Network event monitoring (link up/down)");
+    info!("    • Auto-DHCP on configured interfaces");
     info!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     // Main daemon loop
