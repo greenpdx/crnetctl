@@ -180,7 +180,11 @@ impl NetworkMonitor {
         let async_fd = tokio::io::unix::AsyncFd::new(socket)
             .map_err(|e| NetctlError::ServiceError(format!("Failed to create async fd: {}", e)))?;
 
-        info!("Network monitor ready, listening for events...");
+        // Periodic validation interval (30 seconds)
+        const VALIDATION_INTERVAL_SECS: u64 = 30;
+        let mut last_validation = std::time::Instant::now();
+
+        info!("Network monitor ready, listening for events (validation every {}s)...", VALIDATION_INTERVAL_SECS);
 
         while *running.read().await {
             // Wait for the socket to be readable
@@ -194,7 +198,11 @@ impl NetworkMonitor {
                     continue;
                 }
                 Err(_) => {
-                    // Timeout - just continue to check running flag
+                    // Timeout - check if we need to run periodic validation
+                    if last_validation.elapsed().as_secs() >= VALIDATION_INTERVAL_SECS {
+                        validate_interface_states(&mut known_interfaces, &event_tx).await;
+                        last_validation = std::time::Instant::now();
+                    }
                     continue;
                 }
             };
@@ -223,6 +231,12 @@ impl NetworkMonitor {
             }
 
             guard.clear_ready();
+
+            // Also check validation timer after processing messages
+            if last_validation.elapsed().as_secs() >= VALIDATION_INTERVAL_SECS {
+                validate_interface_states(&mut known_interfaces, &event_tx).await;
+                last_validation = std::time::Instant::now();
+            }
         }
 
         Ok(())
@@ -463,4 +477,103 @@ fn process_netlink_messages(
     }
 
     Ok(())
+}
+
+/// Periodic validation of interface states against sysfs
+/// This catches any missed netlink events
+#[cfg(target_os = "linux")]
+async fn validate_interface_states(
+    known_interfaces: &mut std::collections::HashMap<u32, (String, bool)>,
+    event_tx: &broadcast::Sender<NetworkEvent>,
+) {
+    debug!("Running periodic interface state validation");
+
+    // Read current interfaces from sysfs
+    let entries = match tokio::fs::read_dir("/sys/class/net").await {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("Failed to read /sys/class/net for validation: {}", e);
+            return;
+        }
+    };
+
+    let mut entries = entries;
+    let mut current_interfaces: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Ok(name) = entry.file_name().into_string() {
+            // Read operstate
+            let operstate_path = format!("/sys/class/net/{}/operstate", name);
+            let is_up = match tokio::fs::read_to_string(&operstate_path).await {
+                Ok(state) => state.trim() == "up",
+                Err(_) => false,
+            };
+            current_interfaces.insert(name, is_up);
+        }
+    }
+
+    // Check for discrepancies with known_interfaces
+    for (index, (name, known_is_up)) in known_interfaces.iter_mut() {
+        if let Some(&actual_is_up) = current_interfaces.get(name) {
+            if *known_is_up != actual_is_up {
+                warn!("Validation: Interface {} state mismatch (known: {}, actual: {}), emitting event",
+                      name,
+                      if *known_is_up { "up" } else { "down" },
+                      if actual_is_up { "up" } else { "down" });
+
+                // Update our state
+                *known_is_up = actual_is_up;
+
+                // Emit the missed event
+                let _ = event_tx.send(NetworkEvent::InterfaceStateChanged {
+                    index: *index,
+                    name: name.clone(),
+                    is_up: actual_is_up,
+                });
+            }
+        }
+    }
+
+    // Check for new interfaces we don't know about
+    let known_names: std::collections::HashSet<String> = known_interfaces
+        .values()
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    for (name, is_up) in &current_interfaces {
+        if !known_names.contains(name) {
+            // Try to get the interface index from sysfs
+            let ifindex_path = format!("/sys/class/net/{}/ifindex", name);
+            let index = match tokio::fs::read_to_string(&ifindex_path).await {
+                Ok(idx_str) => idx_str.trim().parse::<u32>().unwrap_or(0),
+                Err(_) => 0,
+            };
+
+            if index > 0 {
+                info!("Validation: Found new interface {} (index {})", name, index);
+                known_interfaces.insert(index, (name.clone(), *is_up));
+                let _ = event_tx.send(NetworkEvent::InterfaceAdded {
+                    index,
+                    name: name.clone(),
+                });
+            }
+        }
+    }
+
+    // Check for removed interfaces
+    let removed: Vec<u32> = known_interfaces
+        .iter()
+        .filter(|(_, (name, _))| !current_interfaces.contains_key(name))
+        .map(|(idx, _)| *idx)
+        .collect();
+
+    for index in removed {
+        if let Some((name, _)) = known_interfaces.remove(&index) {
+            info!("Validation: Interface {} (index {}) no longer exists", name, index);
+            let _ = event_tx.send(NetworkEvent::InterfaceRemoved {
+                index,
+                name,
+            });
+        }
+    }
 }
