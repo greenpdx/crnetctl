@@ -2,10 +2,14 @@
 //!
 //! This module monitors network interface link state changes (up/down)
 //! and triggers actions like starting DHCP when links come up.
+//!
+//! It subscribes to NetworkMonitor events for real-time notifications
+//! instead of polling.
 
 use crate::error::NetctlResult;
 use crate::dhcp_client::DhcpClientController;
 use crate::interface::InterfaceController;
+use crate::network_monitor::{NetworkMonitor, NetworkEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -44,7 +48,7 @@ pub struct InterfaceConfig {
     pub auto_dhcp: bool,
 }
 
-/// Link state monitor
+/// Link state monitor that subscribes to NetworkMonitor events
 pub struct LinkMonitor {
     /// Interface controller
     interface_controller: Arc<InterfaceController>,
@@ -56,8 +60,8 @@ pub struct LinkMonitor {
     interface_configs: Arc<RwLock<HashMap<String, InterfaceConfig>>>,
     /// Event sender
     event_tx: mpsc::UnboundedSender<LinkStateEvent>,
-    /// Poll interval
-    poll_interval: Duration,
+    /// Network monitor to subscribe to
+    network_monitor: Option<Arc<NetworkMonitor>>,
 }
 
 impl LinkMonitor {
@@ -75,15 +79,15 @@ impl LinkMonitor {
                 link_states: Arc::new(RwLock::new(HashMap::new())),
                 interface_configs: Arc::new(RwLock::new(HashMap::new())),
                 event_tx,
-                poll_interval: Duration::from_secs(2),
+                network_monitor: None,
             },
             event_rx,
         )
     }
 
-    /// Set poll interval
-    pub fn set_poll_interval(&mut self, interval: Duration) {
-        self.poll_interval = interval;
+    /// Set the network monitor to subscribe to for events
+    pub fn set_network_monitor(&mut self, monitor: Arc<NetworkMonitor>) {
+        self.network_monitor = Some(monitor);
     }
 
     /// Add an interface to monitor
@@ -122,9 +126,100 @@ impl LinkMonitor {
         }
     }
 
-    /// Start monitoring (runs in background)
+    /// Start monitoring using NetworkMonitor events (preferred method)
+    pub async fn start_with_events(self: Arc<Self>) -> NetctlResult<()> {
+        let monitor = match &self.network_monitor {
+            Some(m) => m.clone(),
+            None => {
+                warn!("No NetworkMonitor configured, cannot start event-based monitoring");
+                return Ok(());
+            }
+        };
+
+        info!("Starting link state monitor (event-driven via NetworkMonitor)");
+
+        let mut event_rx = monitor.subscribe();
+
+        loop {
+            match event_rx.recv().await {
+                Ok(event) => {
+                    if let Err(e) = self.handle_network_event(event).await {
+                        warn!("Error handling network event: {}", e);
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    warn!("LinkMonitor lagged behind by {} events", n);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    info!("NetworkMonitor channel closed, stopping LinkMonitor");
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle a network event from NetworkMonitor
+    async fn handle_network_event(&self, event: NetworkEvent) -> NetctlResult<()> {
+        match event {
+            NetworkEvent::InterfaceStateChanged { name, is_up, .. } => {
+                // Check if we're monitoring this interface
+                let configs = self.interface_configs.read().await;
+                if !configs.contains_key(&name) {
+                    return Ok(());
+                }
+                drop(configs);
+
+                let new_state = if is_up { LinkState::Up } else { LinkState::Down };
+                let previous_state = {
+                    let states = self.link_states.read().await;
+                    states.get(&name).copied().unwrap_or(LinkState::Unknown)
+                };
+
+                if new_state != previous_state {
+                    // Update stored state
+                    self.link_states.write().await.insert(name.clone(), new_state);
+
+                    // Send event
+                    let link_event = LinkStateEvent {
+                        interface: name.clone(),
+                        state: new_state,
+                        previous_state,
+                    };
+                    let _ = self.event_tx.send(link_event.clone());
+
+                    // Handle state change (DHCP actions)
+                    self.handle_state_change(&link_event).await?;
+                }
+            }
+            NetworkEvent::InterfaceAdded { name, .. } => {
+                // Check if this interface should be auto-monitored
+                debug!("Interface added: {}", name);
+            }
+            NetworkEvent::InterfaceRemoved { name, .. } => {
+                // Remove from our tracking if present
+                self.link_states.write().await.remove(&name);
+                debug!("Interface removed: {}", name);
+            }
+            _ => {
+                // Ignore other events
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Start monitoring (runs in background) - legacy polling mode
+    /// Prefer start_with_events() when a NetworkMonitor is available
     pub async fn start(self: Arc<Self>) -> NetctlResult<()> {
-        info!("Starting link state monitor (poll interval: {:?})", self.poll_interval);
+        // If we have a network monitor, use event-driven mode
+        if self.network_monitor.is_some() {
+            return self.start_with_events().await;
+        }
+
+        // Otherwise fall back to polling (legacy behavior)
+        info!("Starting link state monitor (polling mode - no NetworkMonitor configured)");
 
         loop {
             // Get list of interfaces to monitor
@@ -140,11 +235,11 @@ impl LinkMonitor {
                 }
             }
 
-            sleep(self.poll_interval).await;
+            sleep(Duration::from_secs(2)).await;
         }
     }
 
-    /// Check an interface for state changes
+    /// Check an interface for state changes (polling mode only)
     async fn check_interface(&self, interface: &str) -> NetctlResult<()> {
         let current_state = self.get_link_state(interface).await;
         let previous_state = {

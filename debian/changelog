@@ -1,3 +1,9 @@
+netctl (0.1.0-4) unstable; urgency=medium
+
+  * Cargo.toml,src/link_monitor.rs,src/network_monitor.rs
+
+ -- netctl developers <netctl@example.com>  Tue, 16 Dec 2025 03:59:17 +0000
+
 netctl (0.1.0-3) unstable; urgency=medium
 
   * docs/AP_SETUP.md,docs/NETWORKMANAGER_COMPATIBILITY.md,src/bin/nccli.rs,src/bin/netctld.rs,src/cr_dbus/integration.rs

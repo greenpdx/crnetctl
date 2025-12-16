@@ -66,6 +66,8 @@ zvariant = "5"
 # Network monitoring
 rtnetlink = "0.18"
 netlink-packet-route = "0.25"
+netlink-packet-core = "0.8"
+netlink-sys = "0.8"
 
 # Logging
 tracing = "0.1"
