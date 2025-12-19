@@ -1,6 +1,7 @@
 //! Network event monitoring using netlink
 //!
-//! This module monitors network interface events and propagates them to D-Bus
+//! This module monitors network interface events using rtnetlink event streams
+//! and propagates them to D-Bus and other subscribers.
 
 use crate::error::{NetctlError, NetctlResult};
 use std::sync::Arc;
@@ -102,8 +103,8 @@ impl NetworkMonitor {
         // Try to use rtnetlink for real netlink monitoring
         #[cfg(target_os = "linux")]
         {
-            if let Err(e) = Self::monitor_with_rtnetlink(event_tx.clone(), running.clone()).await {
-                warn!("rtnetlink monitoring failed: {}, falling back to polling", e);
+            if let Err(e) = Self::monitor_with_rtnetlink_events(event_tx.clone(), running.clone()).await {
+                warn!("rtnetlink event monitoring failed: {}, falling back to polling", e);
                 Self::monitor_with_polling(event_tx, running).await?;
             }
         }
@@ -117,22 +118,46 @@ impl NetworkMonitor {
         Ok(())
     }
 
-    /// Monitor using rtnetlink (Linux-specific)
+    /// Monitor using rtnetlink events (Linux-specific)
     #[cfg(target_os = "linux")]
-    async fn monitor_with_rtnetlink(
+    async fn monitor_with_rtnetlink_events(
         event_tx: broadcast::Sender<NetworkEvent>,
         running: Arc<tokio::sync::RwLock<bool>>,
     ) -> NetctlResult<()> {
         use futures::stream::TryStreamExt;
-        use netlink_packet_route::link::LinkAttribute;
+        use netlink_sys::{protocols::NETLINK_ROUTE, Socket, SocketAddr};
 
-        // Try to use netlink
+        // Create a netlink socket and join multicast groups for link events
+        let mut socket = Socket::new(NETLINK_ROUTE)
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to create netlink socket: {}", e)))?;
+
+        // Bind to the socket
+        let kernel_addr = SocketAddr::new(0, 0);
+        socket.bind(&kernel_addr)
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to bind netlink socket: {}", e)))?;
+
+        // Join RTNLGRP_LINK multicast group (group 1)
+        // RTNLGRP_LINK = 1, so we use 1 << (1-1) = 1
+        const RTNLGRP_LINK: u32 = 1;
+        socket.add_membership(RTNLGRP_LINK)
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to join RTNLGRP_LINK: {}", e)))?;
+
+        // Also join RTNLGRP_IPV4_IFADDR for address changes (group 5)
+        const RTNLGRP_IPV4_IFADDR: u32 = 5;
+        socket.add_membership(RTNLGRP_IPV4_IFADDR)
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to join RTNLGRP_IPV4_IFADDR: {}", e)))?;
+
+        // Set socket to non-blocking for async operation
+        socket.set_non_blocking(true)
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to set non-blocking: {}", e)))?;
+
+        info!("Using rtnetlink events for network monitoring (joined RTNLGRP_LINK, RTNLGRP_IPV4_IFADDR)");
+
+        // Also create an rtnetlink handle for querying initial state
         let (connection, handle, _) = rtnetlink::new_connection()
-            .map_err(|e| NetctlError::ServiceError(format!("Failed to create netlink connection: {}", e)))?;
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to create rtnetlink connection: {}", e)))?;
 
         tokio::spawn(connection);
-
-        info!("Using rtnetlink for network event monitoring");
 
         // Track interfaces: index -> (name, is_up)
         let mut known_interfaces: std::collections::HashMap<u32, (String, bool)> = std::collections::HashMap::new();
@@ -141,90 +166,84 @@ impl NetworkMonitor {
         let mut links = handle.link().get().execute();
         while let Some(link) = links.try_next().await
             .map_err(|e| NetctlError::ServiceError(format!("Failed to get links: {}", e)))? {
-            if let Some(name) = link.attributes.iter().find_map(|attr| {
-                if let LinkAttribute::IfName(name) = attr {
-                    Some(name.clone())
-                } else {
-                    None
-                }
-            }) {
-                // Read operstate from sysfs for accurate link state
-                let is_up = Self::read_operstate(&name).await;
+            if let Some(name) = extract_interface_name(&link) {
+                let is_up = extract_operstate(&link);
                 known_interfaces.insert(link.header.index, (name.clone(), is_up));
                 debug!("Found interface: {} (index {}) state: {}", name, link.header.index, if is_up { "up" } else { "down" });
             }
         }
 
-        // Use polling instead of listening to netlink messages for simplicity
-        // (listening requires more complex message handling)
-        info!("Using periodic polling for interface changes");
+        // Buffer for receiving netlink messages
+        let mut buf = vec![0u8; 16384];
+
+        // Convert socket to async using tokio
+        let async_fd = tokio::io::unix::AsyncFd::new(socket)
+            .map_err(|e| NetctlError::ServiceError(format!("Failed to create async fd: {}", e)))?;
+
+        // Periodic validation interval (30 seconds)
+        const VALIDATION_INTERVAL_SECS: u64 = 30;
+        let mut last_validation = std::time::Instant::now();
+
+        info!("Network monitor ready, listening for events (validation every {}s)...", VALIDATION_INTERVAL_SECS);
+
         while *running.read().await {
-            // Refresh interface list
-            let mut current_links = handle.link().get().execute();
-            let mut current_interfaces: std::collections::HashMap<u32, (String, bool)> = std::collections::HashMap::new();
-
-            while let Some(link) = current_links.try_next().await
-                .map_err(|e| NetctlError::ServiceError(format!("Failed to get links: {}", e)))? {
-                if let Some(name) = link.attributes.iter().find_map(|attr| {
-                    if let LinkAttribute::IfName(name) = attr {
-                        Some(name.clone())
-                    } else {
-                        None
+            // Wait for the socket to be readable
+            let mut guard = match tokio::time::timeout(
+                tokio::time::Duration::from_secs(1),
+                async_fd.readable()
+            ).await {
+                Ok(Ok(guard)) => guard,
+                Ok(Err(e)) => {
+                    error!("AsyncFd error: {}", e);
+                    continue;
+                }
+                Err(_) => {
+                    // Timeout - check if we need to run periodic validation
+                    if last_validation.elapsed().as_secs() >= VALIDATION_INTERVAL_SECS {
+                        validate_interface_states(&mut known_interfaces, &event_tx).await;
+                        last_validation = std::time::Instant::now();
                     }
-                }) {
-                    let index = link.header.index;
+                    continue;
+                }
+            };
 
-                    // Read operstate from sysfs for accurate link state
-                    let is_up = Self::read_operstate(&name).await;
-                    current_interfaces.insert(index, (name.clone(), is_up));
-
-                    // Check if interface is new
-                    if !known_interfaces.contains_key(&index) {
-                        info!("New interface detected: {} (index {})", name, index);
-                        let _ = event_tx.send(NetworkEvent::InterfaceAdded {
-                            index,
-                            name: name.clone(),
-                        });
+            // Try to receive data
+            match guard.get_inner().recv(&mut buf, 0) {
+                Ok(len) if len > 0 => {
+                    // Parse the netlink messages
+                    if let Err(e) = process_netlink_messages(
+                        &buf[..len],
+                        &mut known_interfaces,
+                        &event_tx,
+                    ) {
+                        warn!("Error processing netlink message: {}", e);
                     }
-
-                    // Check if state changed (only send event on actual transition)
-                    if let Some((_, old_is_up)) = known_interfaces.get(&index) {
-                        if *old_is_up != is_up {
-                            info!("Interface {} state changed: {} -> {}",
-                                  name,
-                                  if *old_is_up { "up" } else { "down" },
-                                  if is_up { "up" } else { "down" });
-                            let _ = event_tx.send(NetworkEvent::InterfaceStateChanged {
-                                index,
-                                name,
-                                is_up,
-                            });
-                        }
-                    }
+                }
+                Ok(_) => {
+                    // No data, continue
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    // No data available, this is expected for non-blocking
+                }
+                Err(e) => {
+                    warn!("Error receiving netlink message: {}", e);
                 }
             }
 
-            // Check for removed interfaces
-            for (index, (name, _)) in known_interfaces.iter() {
-                if !current_interfaces.contains_key(index) {
-                    info!("Interface removed: {} (index {})", name, index);
-                    let _ = event_tx.send(NetworkEvent::InterfaceRemoved {
-                        index: *index,
-                        name: name.clone(),
-                    });
-                }
+            guard.clear_ready();
+
+            // Also check validation timer after processing messages
+            if last_validation.elapsed().as_secs() >= VALIDATION_INTERVAL_SECS {
+                validate_interface_states(&mut known_interfaces, &event_tx).await;
+                last_validation = std::time::Instant::now();
             }
-
-            known_interfaces = current_interfaces;
-
-            // Poll every 2 seconds
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         }
 
         Ok(())
     }
 
     /// Read operstate from sysfs - returns true if interface is "up"
+    #[allow(dead_code)]
     async fn read_operstate(interface: &str) -> bool {
         let operstate_path = format!("/sys/class/net/{}/operstate", interface);
         match tokio::fs::read_to_string(&operstate_path).await {
@@ -238,7 +257,7 @@ impl NetworkMonitor {
         event_tx: broadcast::Sender<NetworkEvent>,
         running: Arc<tokio::sync::RwLock<bool>>,
     ) -> NetctlResult<()> {
-        info!("Using polling for network event monitoring");
+        info!("Using polling for network event monitoring (fallback)");
 
         let mut known_interfaces: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
         let mut interface_counter = 0u32;
@@ -311,5 +330,250 @@ impl NetworkMonitor {
 impl Default for NetworkMonitor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Extract interface name from a LinkMessage
+#[cfg(target_os = "linux")]
+fn extract_interface_name(link: &netlink_packet_route::link::LinkMessage) -> Option<String> {
+    use netlink_packet_route::link::LinkAttribute;
+    link.attributes.iter().find_map(|attr| {
+        if let LinkAttribute::IfName(name) = attr {
+            Some(name.clone())
+        } else {
+            None
+        }
+    })
+}
+
+/// Extract operstate from a LinkMessage - returns true if up
+#[cfg(target_os = "linux")]
+fn extract_operstate(link: &netlink_packet_route::link::LinkMessage) -> bool {
+    use netlink_packet_route::link::{LinkAttribute, LinkFlags, State};
+
+    // First check operstate attribute
+    for attr in &link.attributes {
+        if let LinkAttribute::OperState(state) = attr {
+            return *state == State::Up;
+        }
+    }
+
+    // Fallback: check IFF_UP and IFF_RUNNING flags
+    let flags = link.header.flags;
+    flags.contains(LinkFlags::Up) && flags.contains(LinkFlags::Running)
+}
+
+/// Process raw netlink messages from the socket
+#[cfg(target_os = "linux")]
+fn process_netlink_messages(
+    data: &[u8],
+    known_interfaces: &mut std::collections::HashMap<u32, (String, bool)>,
+    event_tx: &broadcast::Sender<NetworkEvent>,
+) -> NetctlResult<()> {
+    use netlink_packet_core::{NetlinkMessage, NetlinkPayload};
+    use netlink_packet_route::RouteNetlinkMessage;
+
+    let mut offset = 0;
+    while offset < data.len() {
+        // Parse the netlink message header
+        let msg: NetlinkMessage<RouteNetlinkMessage> = match NetlinkMessage::deserialize(&data[offset..]) {
+            Ok(msg) => msg,
+            Err(e) => {
+                debug!("Failed to parse netlink message: {}", e);
+                break;
+            }
+        };
+
+        let msg_len = msg.header.length as usize;
+        if msg_len == 0 {
+            break;
+        }
+
+        match msg.payload {
+            NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewLink(link)) => {
+                if let Some(name) = extract_interface_name(&link) {
+                    let index = link.header.index;
+                    let is_up = extract_operstate(&link);
+
+                    if let Some((_, old_is_up)) = known_interfaces.get(&index) {
+                        // Existing interface - check for state change
+                        if *old_is_up != is_up {
+                            info!("Interface {} state changed: {} -> {}",
+                                  name,
+                                  if *old_is_up { "up" } else { "down" },
+                                  if is_up { "up" } else { "down" });
+                            let _ = event_tx.send(NetworkEvent::InterfaceStateChanged {
+                                index,
+                                name: name.clone(),
+                                is_up,
+                            });
+                        }
+                    } else {
+                        // New interface
+                        info!("New interface detected: {} (index {})", name, index);
+                        let _ = event_tx.send(NetworkEvent::InterfaceAdded {
+                            index,
+                            name: name.clone(),
+                        });
+                    }
+
+                    known_interfaces.insert(index, (name, is_up));
+                }
+            }
+            NetlinkPayload::InnerMessage(RouteNetlinkMessage::DelLink(link)) => {
+                let index = link.header.index;
+                if let Some((name, _)) = known_interfaces.remove(&index) {
+                    info!("Interface removed: {} (index {})", name, index);
+                    let _ = event_tx.send(NetworkEvent::InterfaceRemoved {
+                        index,
+                        name,
+                    });
+                }
+            }
+            NetlinkPayload::InnerMessage(RouteNetlinkMessage::NewAddress(addr)) => {
+                let index = addr.header.index;
+                if let Some((name, _)) = known_interfaces.get(&index) {
+                    // Extract address from attributes
+                    use netlink_packet_route::address::AddressAttribute;
+                    for attr in &addr.attributes {
+                        if let AddressAttribute::Address(ip) = attr {
+                            let addr_str = format!("{}/{}", ip, addr.header.prefix_len);
+                            info!("Address added on {}: {}", name, addr_str);
+                            let _ = event_tx.send(NetworkEvent::InterfaceAddressChanged {
+                                index,
+                                name: name.clone(),
+                                address: addr_str,
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+            NetlinkPayload::InnerMessage(RouteNetlinkMessage::DelAddress(addr)) => {
+                let index = addr.header.index;
+                if let Some((name, _)) = known_interfaces.get(&index) {
+                    use netlink_packet_route::address::AddressAttribute;
+                    for attr in &addr.attributes {
+                        if let AddressAttribute::Address(ip) = attr {
+                            let addr_str = format!("{}/{}", ip, addr.header.prefix_len);
+                            info!("Address removed from {}: {}", name, addr_str);
+                            // We use the same event for add/remove, could add a separate event type
+                            let _ = event_tx.send(NetworkEvent::InterfaceAddressChanged {
+                                index,
+                                name: name.clone(),
+                                address: format!("-{}", addr_str), // Prefix with - to indicate removal
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Ignore other message types
+            }
+        }
+
+        offset += msg_len;
+    }
+
+    Ok(())
+}
+
+/// Periodic validation of interface states against sysfs
+/// This catches any missed netlink events
+#[cfg(target_os = "linux")]
+async fn validate_interface_states(
+    known_interfaces: &mut std::collections::HashMap<u32, (String, bool)>,
+    event_tx: &broadcast::Sender<NetworkEvent>,
+) {
+    debug!("Running periodic interface state validation");
+
+    // Read current interfaces from sysfs
+    let entries = match tokio::fs::read_dir("/sys/class/net").await {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("Failed to read /sys/class/net for validation: {}", e);
+            return;
+        }
+    };
+
+    let mut entries = entries;
+    let mut current_interfaces: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if let Ok(name) = entry.file_name().into_string() {
+            // Read operstate
+            let operstate_path = format!("/sys/class/net/{}/operstate", name);
+            let is_up = match tokio::fs::read_to_string(&operstate_path).await {
+                Ok(state) => state.trim() == "up",
+                Err(_) => false,
+            };
+            current_interfaces.insert(name, is_up);
+        }
+    }
+
+    // Check for discrepancies with known_interfaces
+    for (index, (name, known_is_up)) in known_interfaces.iter_mut() {
+        if let Some(&actual_is_up) = current_interfaces.get(name) {
+            if *known_is_up != actual_is_up {
+                warn!("Validation: Interface {} state mismatch (known: {}, actual: {}), emitting event",
+                      name,
+                      if *known_is_up { "up" } else { "down" },
+                      if actual_is_up { "up" } else { "down" });
+
+                // Update our state
+                *known_is_up = actual_is_up;
+
+                // Emit the missed event
+                let _ = event_tx.send(NetworkEvent::InterfaceStateChanged {
+                    index: *index,
+                    name: name.clone(),
+                    is_up: actual_is_up,
+                });
+            }
+        }
+    }
+
+    // Check for new interfaces we don't know about
+    let known_names: std::collections::HashSet<String> = known_interfaces
+        .values()
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    for (name, is_up) in &current_interfaces {
+        if !known_names.contains(name) {
+            // Try to get the interface index from sysfs
+            let ifindex_path = format!("/sys/class/net/{}/ifindex", name);
+            let index = match tokio::fs::read_to_string(&ifindex_path).await {
+                Ok(idx_str) => idx_str.trim().parse::<u32>().unwrap_or(0),
+                Err(_) => 0,
+            };
+
+            if index > 0 {
+                info!("Validation: Found new interface {} (index {})", name, index);
+                known_interfaces.insert(index, (name.clone(), *is_up));
+                let _ = event_tx.send(NetworkEvent::InterfaceAdded {
+                    index,
+                    name: name.clone(),
+                });
+            }
+        }
+    }
+
+    // Check for removed interfaces
+    let removed: Vec<u32> = known_interfaces
+        .iter()
+        .filter(|(_, (name, _))| !current_interfaces.contains_key(name))
+        .map(|(idx, _)| *idx)
+        .collect();
+
+    for index in removed {
+        if let Some((name, _)) = known_interfaces.remove(&index) {
+            info!("Validation: Interface {} (index {}) no longer exists", name, index);
+            let _ = event_tx.send(NetworkEvent::InterfaceRemoved {
+                index,
+                name,
+            });
+        }
     }
 }
